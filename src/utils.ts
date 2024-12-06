@@ -1,8 +1,12 @@
 import { QueryExecResult, SqlValue } from "sql.js";
 
-export const sqliteInfoToIntermediate = (_result: unknown) => {
-  return "TODO";
-};
+import { run } from "@softwaretechnik/dbml-renderer";
+import "core-js/full/set/is-subset-of";
+
+// This sucessfully imports but we can't use @ts-expect-error as the error is not in at lint but while compiling(?)
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import { Graphviz } from "@hpcc-js/wasm-graphviz";
 
 interface Column {
   name: string;
@@ -11,7 +15,7 @@ interface Column {
   default: SqlValue;
 }
 
-interface Table {
+interface PartialTable {
   name: string;
   columns: Column[];
 }
@@ -43,12 +47,27 @@ class Index {
 
 type FN_ACTION = "CASCADE" | "RESTRICT" | "TODO WRITE THEM ALL";
 
-interface ForeignKey {
-  from: Table;
+interface PartialForeignKey {
+  from: PartialTable;
   fromColumns: Column[];
   // not the complete types as they aren't available at the time of FN upsert
   to: string;
   toColumns: string[];
+  onUpdate: FN_ACTION;
+  onDelete: FN_ACTION;
+}
+
+interface Table {
+  name: string;
+  columns: Column[];
+  indexes: Index[];
+}
+
+interface ForeignKey {
+  from: Table;
+  fromColumns: Column[];
+  to: Table;
+  toColumns: Column[];
   onUpdate: FN_ACTION;
   onDelete: FN_ACTION;
 }
@@ -67,9 +86,8 @@ const typeResult = <T>(result: QueryExecResult): T[] => {
 };
 
 // PRAGMA table_info(table)
-export const tableFromResult = (tableName: string, result: QueryExecResult): { table: Table, primaryKey: Index } => {
+export const tableFromResult = (tableName: string, result: QueryExecResult): { table: PartialTable, primaryKey: Index } => {
   const typedResult = typeResult<{ cid: number, name: string, type: string, notnull: number, dflt_value: SqlValue, pk: number }>(result);
-  console.log(typedResult);
   const columns: (Column & { pk: boolean })[] = typedResult.map((row) => {
     return {
       name: row.name,
@@ -89,7 +107,7 @@ export const tableFromResult = (tableName: string, result: QueryExecResult): { t
 };
 
 // PRAGMA foreign_key_list(table)
-export const foreignKeysFromResult = (table: Table, result: QueryExecResult): ForeignKey[] => {
+export const foreignKeysFromResult = (table: PartialTable, result: QueryExecResult): PartialForeignKey[] => {
   const typedResult = typeResult<{ id: number, seq: number, table: string, from: string, to: string, on_update: string, on_delete: string, match: string }>(result);
   const partialForeignKeys: { [id: number]: { toTable: string, onUpdate: FN_ACTION, onDelete: FN_ACTION, columns: { from: string, to: string }[] } } = {};
   for (const row of typedResult) {
@@ -109,7 +127,7 @@ export const foreignKeysFromResult = (table: Table, result: QueryExecResult): Fo
     });
   }
 
-  const foreignKeys: ForeignKey[] = Object.values(partialForeignKeys).map((fk) => {
+  const foreignKeys: PartialForeignKey[] = Object.values(partialForeignKeys).map((fk) => {
     return {
       from: table,
       fromColumns: fk.columns.map((col) => table.columns.find((c) => c.name === col.from)!),
@@ -125,7 +143,7 @@ export const foreignKeysFromResult = (table: Table, result: QueryExecResult): Fo
 
 // PRAGMA index_list(table)
 // PRAGMA index_info(index)
-export const indexesFromResult = (table: Table, indexListResult: QueryExecResult, indexInfoResult: { [indexName: string]: QueryExecResult }): Index[] => {
+export const indexesFromResult = (table: PartialTable, indexListResult: QueryExecResult, indexInfoResult: { [indexName: string]: QueryExecResult }): Index[] => {
   const typedIndexListResult = typeResult<{ seq: number, name: string, unique: number, origin: string, partial: number }>(indexListResult);
   const typedInfoResults: { [indexName: string]: { seqno: number, cid: number, name: string }[] } = Object.entries(indexInfoResult).map(([indexName, result]) => {
     return {
@@ -161,7 +179,6 @@ export const executorToLayout = (executor: (query: string) => QueryExecResult): 
   for (const tableName of tableNames) {
     const tableInfo = executor(`PRAGMA table_info(${tableName})`);
     const { table, primaryKey } = tableFromResult(tableName, tableInfo);
-    console.log(table, primaryKey);
 
     layout.addTable(table);
     layout.addIndex(tableName, primaryKey);
@@ -194,11 +211,11 @@ export const indent = (str: string, level: number) => {
 };
 
 export class SQLiteLayout {
-  private tables: { [name: string]: Table } = {};
+  private tables: { [name: string]: PartialTable } = {};
   private indexes: { [tableName: string]: Index[] } = {};
-  private foreignKeys: ForeignKey[] = [];
+  private foreignKeys: PartialForeignKey[] = [];
 
-  public addTable(table: Table) {
+  public addTable(table: PartialTable) {
     this.tables[table.name] = table;
   }
 
@@ -212,8 +229,34 @@ export class SQLiteLayout {
     this.indexes[tableName].push(index);
   }
 
-  public addForeignKey(foreignKey: ForeignKey) {
+  public addForeignKey(foreignKey: PartialForeignKey) {
     this.foreignKeys.push(foreignKey);
+  }
+
+  public getTable(name: string): Table {
+    const table = this.tables[name];
+    if (!table) {
+      throw new Error(`Table ${name} not found`);
+    }
+    return {
+      name: table.name,
+      columns: table.columns,
+      indexes: this.indexes[name] || []
+    };
+  }
+
+  public getForeignKeys(): ForeignKey[] {
+    return this.foreignKeys.map((fk) => {
+      const toTable = this.getTable(fk.to);
+      return {
+        from: this.getTable(fk.from.name),
+        fromColumns: fk.fromColumns,
+        to: this.getTable(fk.to),
+        toColumns: toTable.columns.filter((col) => fk.toColumns.includes(col.name)),
+        onUpdate: fk.onUpdate,
+        onDelete: fk.onDelete
+      };
+    });
   }
 
   private formatColumnDefault(value: SqlValue): string {
@@ -254,42 +297,83 @@ export class SQLiteLayout {
 
   }
 
-  private getDBMLTable(table: Table, indexes: Index[]): string {
+  private getDBMLTable(table: Table): string {
     const columns = table.columns.map((column) => this.getDBMLColumn(column)).join("\n");
-    const indexesFormatted = indexes.map((index) => this.getDBMLIndex(index)).join("\n");
+    const indexesFormatted = table.indexes.map((index) => this.getDBMLIndex(index)).join("\n");
     return `Table ${table.name} {\n${indent(columns, 4)}\n\n${indent("indexes {", 4)}\n${indent(indexesFormatted, 8)}\n${indent("}", 4)}\n}`;
   }
 
+  private isColumnsOnUniqueIndex(table: Table, columns: Column[]): boolean {
+    // takes into account that e.x. unique(a) then (a, b) is on a unique index 
+    const columnSet = new Set(columns.map((col) => col.name));
+    for (const index of table.indexes) {
+      if (!index.unique) {
+        continue;
+      }
+      const indexSet = new Set(index.columns.map((col) => col.name));
+      if (indexSet.isSubsetOf(columnSet)) {
+        return true;
+      }
 
-  private getDBMLForeignKey(foreignKey: ForeignKey, fromTable: Table, toTable: Table): string {
-    return "TODO";
+    }
+
+    return false;
+  }
+
+  private getForeignKeyType(foreignKey: ForeignKey): string {
+    /*
+    <: one-to-many. E.g: users.id < posts.user_id
+    >: many-to-one. E.g: posts.user_id > users.id
+    -: one-to-one. E.g: users.id - user_infos.user_id
+    <>: many-to-many. E.g: authors.id <> books.id
+    */
+    // if toTable any of the columns are a unique index (but not with other), than we have one on the target/to side
+    // if fromTable any of the columns are a unique index (but not with other), than we have one on the source/from side
+
+    const toIsUnique = this.isColumnsOnUniqueIndex(foreignKey.to, foreignKey.toColumns);
+    const fromIsUnique = this.isColumnsOnUniqueIndex(foreignKey.from, foreignKey.fromColumns);
+
+    if (toIsUnique && fromIsUnique) {
+      return "-";
+    }
+    if (toIsUnique) {
+      return ">";
+    }
+    if (fromIsUnique) {
+      return "<";
+    }
+    return "<>";
+  }
+
+  private getDBMLForeignKey(foreignKey: ForeignKey): string {
+    const type = this.getForeignKeyType(foreignKey);
+    const fromColumns = foreignKey.fromColumns.map((col) => col.name).join(", ");
+    const toColumns = foreignKey.toColumns.map((col) => col.name).join(", ");
+    // Ref: posts.(user_id1, user_id2) > users.(id1, id2)
+    const actions = `[delete: ${foreignKey.onDelete} update: ${foreignKey.onUpdate} ]`;
+    return `Ref: ${foreignKey.from.name}.(${fromColumns}) ${type} ${foreignKey.to.name}.(${toColumns}) ${actions}`;
   }
 
   public getDBML(): string {
-    const tables = Object.entries(this.tables).map(([name, table]) => {
-      const indexes = this.indexes[name] || [];
-      return this.getDBMLTable(table, indexes);
+    const tables = Object.keys(this.tables).map((name) => {
+      const table = this.getTable(name);
+      return this.getDBMLTable(table);
     }).join("\n\n");
-    const foreignKeys = this.foreignKeys.map((foreignKey) => this.getDBMLForeignKey(foreignKey, this.tables[foreignKey.from.name], this.tables[foreignKey.to])).join("\n");
+    const foreignKeys = this.getForeignKeys().map((foreignKey) => this.getDBMLForeignKey(foreignKey)).join("\n\n");
 
-    return `${tables}\n${foreignKeys}`.replace(/å/g, "a").replace(/ä/g, "a").replace(/ö/g, "o");
+    return `${tables}\n\n${foreignKeys}`.replace(/å/g, "a").replace(/ä/g, "a").replace(/ö/g, "o");
 
   }
-
-  public consoleLog() {
-    console.group("Database Dump");
-    console.log("Tables:");
-    console.table(this.tables);
-    
-    console.log("Indexes:");
-    console.table(this.indexes);
-    
-    console.log("Foreign Keys:");
-    console.table(this.foreignKeys);
-    
-    console.groupEnd();
-  }
-  // TODO: Methods for DBML generation
-
-  
 }
+
+
+export const dbmlToSVG = async (dbml: string) => {
+  const dot = run(dbml, "dot");
+  const graphviz = await Graphviz.load();
+  return graphviz.dot(dot);
+};
+
+export const colorErdSVG = (svg: string, darkMode: boolean): string => {
+  console.log(svg);
+  return svg;
+};

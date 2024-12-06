@@ -15,34 +15,25 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-import React, { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import "./App.css";
-
-import ExportRenderer from "./ExportRenderer";
 
 import initSqlJs from "sql.js";
 
-// import { format as formatFns } from "date-fns";
-// import { toPng } from "html-to-image";
 import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
-import { executorToLayout } from "./utils";
-// import { sqliteInfoToIntermediate } from "./utils";
+import { colorErdSVG, dbmlToSVG, executorToLayout } from "./utils";
 
 function App() {
   const [engine, setEngine] = useState<initSqlJs.SqlJsStatic>();
   const [database, setDatabase] = useState<initSqlJs.Database>();
-  const [referentialIntegrityOk, setReferentialIntegrityOk] = useState<boolean | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
-  const [erdImage, setErdImage] = useState<ReactNode>();
+  const [erdSVG, setErdSVG] = useState<string>();
+  const [erdImage, setErdImage] = useState<string>();
 
-  const { getTheme, setTheme, isDarkMode } = useTheme();
-
-  // Exporting functionality / flags
-  const [exportingStatus, setExportingStatus] = useState<number>(0);
-  const exportRendererRef = useRef<HTMLDivElement>(null);
+  const { setTheme, isDarkMode } = useTheme();
 
   const initSQLEngine = useCallback(async () => {
     const SQL = await initSqlJs(
@@ -68,7 +59,6 @@ function App() {
     reader.onload = () => {
       const data = reader.result as ArrayBuffer;
       const db = new engine.Database(new Uint8Array(data));
-      setReferentialIntegrityOk(undefined);
       setDatabase(db);
     };
     reader.readAsArrayBuffer(file);
@@ -81,7 +71,6 @@ function App() {
     }
 
     const res = database.exec("PRAGMA foreign_key_check;");
-    setReferentialIntegrityOk(res.length === 0);
     if (res.length !== 0) {
       setError("Referential integrity is not ok!");
       return;
@@ -100,61 +89,39 @@ function App() {
     });
     // layout.consoleLog();
     console.log(layout.getDBML());
+    dbmlToSVG(layout.getDBML()).then((svg) => {
+      setErdSVG(svg);
+    });
   }, [database]);
 
+  useEffect(() => {
+    if (!erdSVG) {
+      return;
+    }
 
+    const finalSVG = colorErdSVG(erdSVG, isDarkMode());
 
-  // TODO: Maybe override default behavior for ctrl+s to save generated image
-  // useEffect(() => {
-  //   const handleKeyDown = (e: KeyboardEvent) => {
-  //     if (e.key === "s" && (e.ctrlKey || e.metaKey)) {
-  //       e.preventDefault();
-  //       exportData();
-  //     }
-  //   };
-  //   document.addEventListener("keydown", handleKeyDown);
-  //   return () => document.removeEventListener("keydown", handleKeyDown);
-  // }, [exportData]);
-
-  // Png exports
-  // const exportImageQuery = useCallback(() => {
-  //   setExportQuestion(question);
-  // }, [exportView, loadedQuestionCorrect, question]);
-
-  // useEffect(() => {
-  //   if (!exportRendererRef.current || exportingStatus >= 1) {
-  //     return;
-  //   }
-
-  //   // TODO: I'm not really a fan of this solution but without it the browser crashes due to downloading an extreme amount of files
-  //   setExportingStatus(1);
-
-  //   const exportRenderer = exportRendererRef.current;
-  //   toPng(exportRenderer, { 
-  //     canvasWidth: exportRenderer.clientWidth,
-  //     width: exportRenderer.clientWidth,
-  //     canvasHeight: exportRenderer.clientHeight,
-  //     height: exportRenderer.clientHeight,
-  //     pixelRatio: 1 
-  //   }).then((dataUrl) => {
-  //     const link = document.createElement("a");
-  //     link.download = `validator_${question.id}_${question.category.display_number}${question.display_sequence}.png`;
-  //     link.href = dataUrl;
-  //     link.click();
-  //     setExportQuestion(undefined);
-  //     setExportQuery(undefined);
-  //     setExportingStatus(0);
-  //   }
-  //   );
-  // }, [evaluatedQuery, exportQuery, exportRendererRef, getTheme, isDarkMode, exportingStatus, question, resetResult, setTheme, exportQuestion, exportView]);
+    setErdImage(`data:image/svg+xml;base64,${btoa(finalSVG)}`);
+  }, [erdSVG, isDarkMode]);
 
   return (
     <div className="App">
-      {erdImage && <ExportRenderer ref={exportRendererRef} erd={erdImage} />}
       <header className="App-header">
         <div className="my-2"></div>
         <ThemeToggle setTheme={setTheme} isDarkMode={isDarkMode}></ThemeToggle>
         <h1 className="text-6xl font-semibold my-3">SQLite ERD</h1>
+        <div className="max-w-4xl w-full min-h-96">
+          {erdImage && 
+            <img
+              src={erdImage}
+              alt="ERD Diagram"
+              style={{
+                width: "100%",
+                height: "auto",
+              }}
+            />
+          }
+        </div>
         {/* <img src={isDarkMode() ? db_scheme_dark : db_scheme_light} className="DB-Layout" alt="Database Layout" /> */}
         {error && <p className="font-mono text-red-500 max-w-4xl break-all">{error}</p>}
         <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded my-3" onClick={() => {
