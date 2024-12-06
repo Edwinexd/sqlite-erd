@@ -373,7 +373,99 @@ export const dbmlToSVG = async (dbml: string) => {
   return graphviz.dot(dot);
 };
 
+interface Theme {
+  text: string;
+  tableHeader: string;
+  tableBackground: string;
+  tableDetails: string;
+  pkText: string;
+  lines: string;
+}
+
+/* Default theme
+const DEFAULT_THEME = {
+  text: "#29235c",
+  tableHeader: "#1d71b8",
+  tableBackground: "#e7e2dd",
+  tableDetails: "#29235c",
+  pkText: "#1d71b8",
+  lines: "#29235c",
+};
+*/
+const LIGHT_THEME: Theme = {
+  text: "#334155",
+  tableHeader: "#3b82f6",
+  tableBackground: "#cbd5e1",
+  tableDetails: "#cbd5e1",
+  pkText: "#1A150F",
+  lines: "#334155",
+};
+
+const DARK_THEME: Theme = {
+  text: "#ffffff",
+  tableHeader: "#3b82f6",
+  tableBackground: "#334155",
+  tableDetails: "#334155",
+  pkText: "#BEEAFF",
+  lines: "#ffffff",
+};
+
 export const colorErdSVG = (svg: string, darkMode: boolean): string => {
-  console.log(svg);
-  return svg;
+  // Define the theme
+  const theme = darkMode ? DARK_THEME : LIGHT_THEME;
+
+  // Parse the SVG string into a DOM object
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svg, "image/svg+xml");
+  const svgElement = doc.documentElement as unknown as SVGSVGElement;
+
+  // Update node elements
+  svgElement.querySelectorAll("g.node *").forEach((element) => {
+    if (element instanceof SVGPolygonElement) {
+      // Update polygon fill
+      if (element.getAttribute("fill") === "#1d71b8") {
+        element.setAttribute("fill", theme.tableHeader);
+      } else if (element.getAttribute("fill") === "#e7e2dd") {
+        element.setAttribute("fill", theme.tableBackground);
+      }
+
+      // Update polygon stroke
+      if (element.getAttribute("stroke") === "#29235c") {
+        element.setAttribute("stroke", theme.tableDetails);
+      }
+    } else if (element instanceof SVGTextElement) {
+      // Update text fill
+      const fillColor = element.getAttribute("fill");
+      if (fillColor === "#29235c") {
+        element.setAttribute("fill", theme.text);
+      } else if (fillColor === "#1d71b8") {
+        element.setAttribute("font-weight", "bold");
+        element.setAttribute("fill", theme.pkText);
+      }
+    }
+  });
+
+  // Update edge elements
+  svgElement.querySelectorAll("g.edge *").forEach((element) => {
+    if (element instanceof SVGPathElement || element instanceof SVGPolygonElement) {
+      // Update edge lines or arrows
+      if (element.getAttribute("stroke") === "#29235c") {
+        element.setAttribute("stroke", theme.lines);
+      }
+    } else if (element instanceof SVGTextElement) {
+      // Update multiplicity text
+      if (element.getAttribute("fill") === "#29235c") {
+        element.setAttribute("fill", theme.text);
+      }
+    }
+  });
+
+  // Serialize the updated DOM back to a string
+  const serializer = new XMLSerializer();
+  // Without the "hacks" the render would be broken
+  const svgContent = serializer.serializeToString(svgElement).replaceAll(" ", "&#160;");
+  const xmlProlog = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>';
+  const doctype = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">';
+  
+  return `${xmlProlog}\n${doctype}\n${svgContent}`;
 };

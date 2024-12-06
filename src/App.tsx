@@ -24,6 +24,7 @@ import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
 import { colorErdSVG, dbmlToSVG, executorToLayout } from "./utils";
+import SqliteInput from "./SqliteInput";
 
 function App() {
   const [engine, setEngine] = useState<initSqlJs.SqlJsStatic>();
@@ -87,8 +88,6 @@ function App() {
       }
       return res[0];
     });
-    // layout.consoleLog();
-    console.log(layout.getDBML());
     dbmlToSVG(layout.getDBML()).then((svg) => {
       setErdSVG(svg);
     });
@@ -110,8 +109,8 @@ function App() {
         <div className="my-2"></div>
         <ThemeToggle setTheme={setTheme} isDarkMode={isDarkMode}></ThemeToggle>
         <h1 className="text-6xl font-semibold my-3">SQLite ERD</h1>
-        <div className="max-w-4xl w-full min-h-96">
-          {erdImage && 
+        <div className="max-w-4xl w-full min-h-96 my-3 relative">
+          {erdImage ? (
             <img
               src={erdImage}
               alt="ERD Diagram"
@@ -120,22 +119,16 @@ function App() {
                 height: "auto",
               }}
             />
-          }
+          ) : (
+            <SqliteInput onUpload={(file) => {loadDatabase(file);}} onError={(errorMessage) => setError(errorMessage)}></SqliteInput>
+          )}
         </div>
-        {/* <img src={isDarkMode() ? db_scheme_dark : db_scheme_light} className="DB-Layout" alt="Database Layout" /> */}
-        {error && <p className="font-mono text-red-500 max-w-4xl break-all">{error}</p>}
-        <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded my-3" onClick={() => {
-          const fileInput = document.createElement("input");
-          fileInput.type = "file";
-          fileInput.accept = ".sqlite";
-          fileInput.onchange = (e) => {
-            const files = (e.target as HTMLInputElement).files;
-            if (files && files.length > 0) {
-              loadDatabase(files[0]);
-            }
-          };
-          fileInput.click();
-        }}>Load Database</button>
+
+
+        {error && <p className="font-mono text-red-500 max-w-4xl text-xl">{error}</p>}
+
+        <button onClick={() => alert("not done :)")} className="bg-green-500 hover:bg-green-700 disabled:bg-green-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 mt-4 rounded w-60" type="submit" disabled={!erdImage}>Download ERD (PNG)</button>
+
         
         <footer className="text-lg py-4 my-3">
           <div className="flex flex-wrap mx-2 justify-center items-center gap-x-8 gap-y-4">
