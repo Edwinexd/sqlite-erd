@@ -27,6 +27,7 @@ import initSqlJs from "sql.js";
 import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
+import { executorToLayout } from "./utils";
 // import { sqliteInfoToIntermediate } from "./utils";
 
 function App() {
@@ -59,10 +60,14 @@ function App() {
 
   // TODO: Error handling, nothing stops the user from throwing something random at it
   const loadDatabase = useCallback((file: File) => {
+    if (!engine) {
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       const data = reader.result as ArrayBuffer;
-      const db = new engine!.Database(new Uint8Array(data));
+      const db = new engine.Database(new Uint8Array(data));
       setReferentialIntegrityOk(undefined);
       setDatabase(db);
     };
@@ -82,6 +87,19 @@ function App() {
       return;
     }
     database.exec("PRAGMA foreign_keys = ON;");
+
+    const layout = executorToLayout((query: string) => { 
+      if (!database) {
+        return { columns: [], values: [] };
+      }
+      const res = database.exec(query);
+      if (res.length === 0) {
+        return { columns: [], values: [] };
+      }
+      return res[0];
+    });
+    // layout.consoleLog();
+    console.log(layout.getDBML());
   }, [database]);
 
 
@@ -139,10 +157,22 @@ function App() {
         <h1 className="text-6xl font-semibold my-3">SQLite ERD</h1>
         {/* <img src={isDarkMode() ? db_scheme_dark : db_scheme_light} className="DB-Layout" alt="Database Layout" /> */}
         {error && <p className="font-mono text-red-500 max-w-4xl break-all">{error}</p>}
+        <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded my-3" onClick={() => {
+          const fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = ".sqlite";
+          fileInput.onchange = (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files && files.length > 0) {
+              loadDatabase(files[0]);
+            }
+          };
+          fileInput.click();
+        }}>Load Database</button>
         
         <footer className="text-lg py-4 my-3">
           <div className="flex flex-wrap mx-2 justify-center items-center gap-x-8 gap-y-4">
-            <p>Copyright &copy; <a href="https://github.com/Edwinexd" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">Edwin Sundberg</a> {new Date().getFullYear()} - <a href="https://github.com/Edwinexd/sql-validator?tab=GPL-3.0-1-ov-file" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">GPL-3.0</a></p>              
+            <p>Copyright &copy; <a href="https://github.com/Edwinexd" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">Edwin Sundberg</a> {new Date().getFullYear()} - <a href="https://github.com/Edwinexd/sqlite-erd?tab=GPL-3.0-1-ov-file" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">GPL-3.0</a></p>              
             <p><a href="https://github.com/Edwinexd/sqlite-erd/issues" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">Report issues</a></p>
             <PrivacyNoticeToggle></PrivacyNoticeToggle>
           </div>
