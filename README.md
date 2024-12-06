@@ -2,7 +2,10 @@
 SQLite ERD is a web application that generates an Entity-Relationship Diagram (ERD) from a SQLite database file. It is designed to help students visualize the structure of a database and understand the relationships between tables.
 
 ## Features
-- TBA
+- Fully Client-Side Execution: All SQL exploration is performed in the browser using sql.js
+- DBML Based: Implements a DBML builder for SQLite databases in combination with [softwaretechnik-berlin/dbml-renderer](https://github.com/softwaretechnik-berlin/dbml-renderer) for diagram generation
+- Dark/Light Mode: Toggle between dark and light mode.
+- Export: Download the generated ERD as a PNG image.
 
 ## Usage
 ### Public Deployment
@@ -15,7 +18,11 @@ To deploy SQLite ERD locally, follow these steps:
 3. Start the development server: `npm start`
 
 ## Screenshots
-TODO
+
+<img src="images/app_dark.png" alt="Dark-themed 'SQLite ERD' app with an upload area for SQLite3 files to generate ERDs, a 'Download ERD (PNG)' button, and footer credits." width="800" height="auto">
+
+<img src="images/generated_erd_dark.png" alt="A relational database schema with entities: Person, Student, Lärare, Deltagande, Kurstillfälle, Kurs, and Rum, showing their attributes and relationships in a dark theme." width="800" height="auto">
+
 
 ## License
 This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE.md) file for more information.

@@ -21,10 +21,12 @@ import "./App.css";
 import initSqlJs from "sql.js";
 
 import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
+import SqliteInput from "./SqliteInput";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
-import { colorErdSVG, dbmlToSVG, executorToLayout } from "./utils";
-import SqliteInput from "./SqliteInput";
+import { colorErdSVG, dbmlToSVG, downloadSvgAsPng, executorToLayout } from "./utils";
+
+import { format as formatFns } from "date-fns";
 
 function App() {
   const [engine, setEngine] = useState<initSqlJs.SqlJsStatic>();
@@ -37,46 +39,24 @@ function App() {
   const { setTheme, isDarkMode } = useTheme();
 
   const initSQLEngine = useCallback(async () => {
-    const SQL = await initSqlJs(
+    const sql = await initSqlJs(
       {
         locateFile: (file) => `/dist/sql.js/${file}`,
       }
     );
 
-    setEngine(SQL);
+    setEngine(sql);
   }, []);
 
   useEffect(() => {
     initSQLEngine();
   }, [initSQLEngine]);
 
-  // TODO: Error handling, nothing stops the user from throwing something random at it
-  const loadDatabase = useCallback((file: File) => {
-    if (!engine) {
-      return;
-    }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const data = reader.result as ArrayBuffer;
-      const db = new engine.Database(new Uint8Array(data));
-      setDatabase(db);
-    };
-    reader.readAsArrayBuffer(file);
-  }, [engine]);
-
-  // Validating Referencial Integrity
   useEffect(() => {
     if (!database) {
       return;
     }
-
-    const res = database.exec("PRAGMA foreign_key_check;");
-    if (res.length !== 0) {
-      setError("Referential integrity is not ok!");
-      return;
-    }
-    database.exec("PRAGMA foreign_keys = ON;");
 
     const layout = executorToLayout((query: string) => { 
       if (!database) {
@@ -88,10 +68,46 @@ function App() {
       }
       return res[0];
     });
+    
     dbmlToSVG(layout.getDBML()).then((svg) => {
       setErdSVG(svg);
+    }).catch((error) => {
+      setError("Error generating ERD: " + error);
     });
   }, [database]);
+
+
+  const loadDatabase = useCallback(async (data: Uint8Array) => {
+    if (!engine) {
+      return;
+    }
+
+    try {
+      const db = new engine.Database(data);
+      setDatabase(db);
+    } catch (error) {
+      setError("Error reading database file. Please upload a valid SQLite database file.\n\nError: " + error);
+      return;
+    }
+  }, [engine]);
+
+
+  const handleFile = useCallback((file: File) => {
+    setError(null);
+    setDatabase(undefined);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      if (!(reader.result instanceof ArrayBuffer)) {
+        setError("Error reading database file. Please upload a valid SQLite database file.");
+        return;
+      }
+      const data = new Uint8Array(reader.result);
+      await loadDatabase(data);
+    };
+    reader.readAsArrayBuffer(file);
+  }, [loadDatabase]);
+
+
 
   useEffect(() => {
     if (!erdSVG) {
@@ -102,6 +118,16 @@ function App() {
 
     setErdImage(`data:image/svg+xml;base64,${btoa(finalSVG)}`);
   }, [erdSVG, isDarkMode]);
+
+  const exportPng = useCallback(() => {
+    if (!erdSVG) {
+      return;
+    }
+
+    const formattedTimestamp = formatFns(new Date(), "yyyyMMdd_HHmm");
+    const fileName = `sqlite_erd_${formattedTimestamp}.png`;
+    downloadSvgAsPng(colorErdSVG(erdSVG, false), fileName);
+  }, [erdSVG]);
 
   return (
     <div className="App">
@@ -120,14 +146,20 @@ function App() {
               }}
             />
           ) : (
-            <SqliteInput onUpload={(file) => {loadDatabase(file);}} onError={(errorMessage) => setError(errorMessage)}></SqliteInput>
+            <SqliteInput onUpload={(file) => {handleFile(file);}} onError={(errorMessage) => setError(errorMessage)}></SqliteInput>
           )}
         </div>
 
 
         {error && <p className="font-mono text-red-500 max-w-4xl text-xl">{error}</p>}
 
-        <button onClick={() => alert("not done :)")} className="bg-green-500 hover:bg-green-700 disabled:bg-green-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 mt-4 rounded w-60" type="submit" disabled={!erdImage}>Download ERD (PNG)</button>
+        <button
+          className="bg-green-500 hover:bg-green-700 disabled:bg-green-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 mt-4 rounded w-60" 
+          onClick={() => exportPng()}
+          type="submit" disabled={!erdImage}
+        >
+          Download ERD (PNG)
+        </button>
 
         
         <footer className="text-lg py-4 my-3">

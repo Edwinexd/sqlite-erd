@@ -91,7 +91,7 @@ export const tableFromResult = (tableName: string, result: QueryExecResult): { t
   const columns: (Column & { pk: boolean })[] = typedResult.map((row) => {
     return {
       name: row.name,
-      type: row.type,
+      type: row.type || "ANY",
       nullable: !(row.notnull === 1),
       default: row.dflt_value,
       pk: row.pk > 0
@@ -181,8 +181,10 @@ export const executorToLayout = (executor: (query: string) => QueryExecResult): 
     const { table, primaryKey } = tableFromResult(tableName, tableInfo);
 
     layout.addTable(table);
-    layout.addIndex(tableName, primaryKey);
-
+    // Not sure why but they exist...
+    if (primaryKey.columns.length > 0) {
+      layout.addIndex(tableName, primaryKey);
+    }
     const foreignKeys = executor(`PRAGMA foreign_key_list(${tableName})`);
     const fks = foreignKeysFromResult(table, foreignKeys);
     for (const fk of fks) {
@@ -300,7 +302,8 @@ export class SQLiteLayout {
   private getDBMLTable(table: Table): string {
     const columns = table.columns.map((column) => this.getDBMLColumn(column)).join("\n");
     const indexesFormatted = table.indexes.map((index) => this.getDBMLIndex(index)).join("\n");
-    return `Table ${table.name} {\n${indent(columns, 4)}\n\n${indent("indexes {", 4)}\n${indent(indexesFormatted, 8)}\n${indent("}", 4)}\n}`;
+    const indexesEntry = indexesFormatted.length === 0 ? "" : `\n${indent("indexes {", 4)}\n${indent(indexesFormatted, 8)}\n${indent("}", 4)}`;
+    return `Table ${table.name} {\n${indent(columns, 4)}\n${indexesEntry}\n}`;
   }
 
   private isColumnsOnUniqueIndex(table: Table, columns: Column[]): boolean {
@@ -468,4 +471,40 @@ export const colorErdSVG = (svg: string, darkMode: boolean): string => {
   const doctype = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">';
   
   return `${xmlProlog}\n${doctype}\n${svgContent}`;
+};
+
+export const downloadSvgAsPng = (svgString: string, filename: string): void => {
+  const svg = new DOMParser().parseFromString(svgString, "image/svg+xml").documentElement;
+  const width = svg.getAttribute("width") || "1920";
+  const height = svg.getAttribute("height") || "1080";
+
+  const canvas = document.createElement("canvas");
+  canvas.width = parseFloat(width);
+  canvas.height = parseFloat(height);
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    alert("Failed to create canvas context");
+    return;
+  }
+
+  const img = new Image();
+
+  img.onload = () => {
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const pngDataUrl = canvas.toDataURL("image/png");
+
+    const link = document.createElement("a");
+    link.href = pngDataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  img.onerror = (err) => {
+    alert(`Failed to load SVG: ${err}`);
+  };
+
+  img.src = `data:image/svg+xml;base64,${btoa(svgString)}`;
 };
