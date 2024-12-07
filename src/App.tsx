@@ -154,7 +154,7 @@ function App() {
         {error && <p className="font-mono text-red-500 max-w-4xl text-xl">{error}</p>}
 
         <button
-          className="bg-green-500 hover:bg-green-700 disabled:bg-green-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 mt-4 rounded w-60" 
+          className="bg-green-500 hover:bg-green-700 disabled:bg-green-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 my-4 rounded w-60" 
           onClick={() => exportPng()}
           type="submit" disabled={!erdImage}
         >
