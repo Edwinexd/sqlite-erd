@@ -45,7 +45,14 @@ class Index {
   }
 }
 
-type FN_ACTION = "CASCADE" | "RESTRICT" | "TODO WRITE THEM ALL";
+type FN_ACTION = "CASCADE" | "RESTRICT" | unknown;
+
+const safeFNAction = (action: FN_ACTION) => {
+  if (action === "CASCADE" || action === "RESTRICT") {
+    return action;
+  }
+  return "CASCADE";
+};
 
 interface PartialForeignKey {
   from: PartialTable;
@@ -194,7 +201,7 @@ export const executorToLayout = (executor: (query: string) => QueryExecResult): 
     const indexes = executor(`PRAGMA index_list(${tableName})`);
     const indexNames = typeResult<{ name: string }>(indexes).map((row) => row.name);
     const indexInfo = indexNames.map((indexName) => {
-      return executor(`PRAGMA index_info(${indexName})`);
+      return executor(`PRAGMA index_info(${indexName || '""'})`);
     }).reduce((acc, val, index) => {
       return { ...acc, [indexNames[index]]: val };
     }, {});
@@ -353,7 +360,7 @@ export class SQLiteLayout {
     const fromColumns = foreignKey.fromColumns.map((col) => col.name).join(", ");
     const toColumns = foreignKey.toColumns.map((col) => col.name).join(", ");
     // Ref: posts.(user_id1, user_id2) > users.(id1, id2)
-    const actions = `[delete: ${foreignKey.onDelete} update: ${foreignKey.onUpdate} ]`;
+    const actions = `[delete: ${safeFNAction(foreignKey.onDelete)} update: ${safeFNAction(foreignKey.onUpdate)} ]`;
     return `Ref: ${foreignKey.from.name}.(${fromColumns}) ${type} ${foreignKey.to.name}.(${toColumns}) ${actions}`;
   }
 
