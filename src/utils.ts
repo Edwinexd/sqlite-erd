@@ -346,7 +346,7 @@ export class SQLiteLayout {
       extraMappings.push({ columns: relevantColumns, columnNames: relevantColumnNames, id: `f${this.dotIdCounter++}` });
     }
 
-    const tableId = `${this.dotIdCounter++}`;
+    const tableId = table.name;
 
     const parts: string[] = [];
     parts.push(`"${table.name}" [id="${tableId}";label=<<TABLE BORDER="2" COLOR="#29235c" CELLBORDER="1" CELLSPACING="0" CELLPADDING="10">`);
