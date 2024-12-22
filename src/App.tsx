@@ -24,7 +24,7 @@ import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
 import SqliteInput from "./SqliteInput";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
-import { colorErdSVG, dbmlToSVG, dotToSvg, downloadSvgAsPng, executorToLayout } from "./utils";
+import { colorErdSVG, dotToSvg, downloadSvgAsPng, executorToLayout } from "./utils";
 
 import { format as formatFns } from "date-fns";
 

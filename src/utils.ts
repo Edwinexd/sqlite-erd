@@ -1,6 +1,5 @@
 import { QueryExecResult, SqlValue } from "sql.js";
 
-import { run } from "@softwaretechnik/dbml-renderer";
 import "core-js/full/set/is-subset-of";
 
 // This sucessfully imports but we can't use @ts-expect-error as the error is not in at lint but while compiling(?)
@@ -46,13 +45,6 @@ class Index {
 }
 
 type FN_ACTION = "CASCADE" | "RESTRICT" | unknown;
-
-const safeFNAction = (action: FN_ACTION) => {
-  if (action === "CASCADE" || action === "RESTRICT") {
-    return action;
-  }
-  return "CASCADE";
-};
 
 interface PartialForeignKey {
   from: PartialTable;
@@ -288,66 +280,6 @@ export class SQLiteLayout {
     });
   }
 
-  private formatColumnDefault(value: SqlValue): string {
-    if (value === null) {
-      return "null";
-    }
-    if (typeof value === "number") {
-      return value.toString();
-    }
-    if (typeof value === "string") {
-      return `'${value}'`;
-    }
-    if (value instanceof Uint8Array) {
-      return `'BLOB:${value.toString()}'`;
-    }
-    return "`Unsupported default value type`";
-  }
-
-  /**
-   * @deprecated
-   * @param column 
-   * @returns 
-   */
-  private getDBMLColumn(column: Column): string {
-    const settings = [];
-    if (!column.nullable) {
-      settings.push("not null");
-    }
-    settings.push(`default: ${this.formatColumnDefault(column.default)}`);
-    return `${column.name} ${column.type} [${settings.join(", ")}]`;
-  }
-
-  /**
-   * @deprecated
-   * @param index 
-   * @returns 
-   */
-  private getDBMLIndex(index: Index): string {
-    const settings = [];
-    if (index.primaryKey) {
-      settings.push("pk");
-    } else if (index.unique) {
-      settings.push("unique");
-    }
-    const columns = index.columns.map((column) => column.name).join(", ");
-    const settingsString = settings.length === 0 ? "" : `[${settings.join(", ")}]`;
-    return `(${columns}) ${settingsString}`;
-
-  }
-
-  /**
-   * @deprecated
-   * @param table 
-   * @returns 
-   */
-  private getDBMLTable(table: Table): string {
-    const columns = table.columns.map((column) => this.getDBMLColumn(column)).join("\n");
-    const indexesFormatted = table.indexes.map((index) => this.getDBMLIndex(index)).join("\n");
-    const indexesEntry = indexesFormatted.length === 0 ? "" : `\n${indent("indexes {", 4)}\n${indent(indexesFormatted, 8)}\n${indent("}", 4)}`;
-    return `Table ${table.name} {\n${indent(columns, 4)}\n${indexesEntry}\n}`;
-  }
-
   private isColumnsOnUniqueIndex(table: Table, columns: Column[]): boolean {
     // takes into account that e.x. unique(a) then (a, b) is on a unique index 
     const columnSet = new Set(columns.map((col) => col.name));
@@ -365,32 +297,7 @@ export class SQLiteLayout {
     return false;
   }
 
-  private getForeignKeyType(foreignKey: ForeignKey): string {
-    /*
-    <: one-to-many. E.g: users.id < posts.user_id
-    >: many-to-one. E.g: posts.user_id > users.id
-    -: one-to-one. E.g: users.id - user_infos.user_id
-    <>: many-to-many. E.g: authors.id <> books.id
-    */
-    // if toTable any of the columns are a unique index (but not with other), than we have one on the target/to side
-    // if fromTable any of the columns are a unique index (but not with other), than we have one on the source/from side
-
-    const toIsUnique = this.isColumnsOnUniqueIndex(foreignKey.to, foreignKey.toColumns);
-    const fromIsUnique = this.isColumnsOnUniqueIndex(foreignKey.from, foreignKey.fromColumns);
-
-    if (toIsUnique && fromIsUnique) {
-      return "-";
-    }
-    if (toIsUnique) {
-      return ">";
-    }
-    if (fromIsUnique) {
-      return "<";
-    }
-    return "<>";
-  }
-
-  private getForeignKeyTypeEnum(foreignKey: ForeignKey): ForeignKeyType {
+  private getForeignKeyType(foreignKey: ForeignKey): ForeignKeyType {
     const isToUnique = this.isColumnsOnUniqueIndex(foreignKey.to, foreignKey.toColumns);
     const isFromUnique = this.isColumnsOnUniqueIndex(foreignKey.from, foreignKey.fromColumns);
 
@@ -404,36 +311,6 @@ export class SQLiteLayout {
       return ForeignKeyType.ONE_TO_MANY;
     }
     return ForeignKeyType.MANY_TO_MANY;
-  } 
-
-  /**
-   * @deprecated
-   * @param foreignKey 
-   * @returns 
-   */
-  private getDBMLForeignKey(foreignKey: ForeignKey): string {
-    const type = this.getForeignKeyType(foreignKey);
-    const fromColumns = foreignKey.fromColumns.map((col) => col.name).join(", ");
-    const toColumns = foreignKey.toColumns.map((col) => col.name).join(", ");
-    // Ref: posts.(user_id1, user_id2) > users.(id1, id2)
-    const actions = `[delete: ${safeFNAction(foreignKey.onDelete)} update: ${safeFNAction(foreignKey.onUpdate)} ]`;
-    return `Ref: ${foreignKey.from.name}.(${fromColumns}) ${type} ${foreignKey.to.name}.(${toColumns}) ${actions}`;
-  }
-
-  /**
-   * @deprecated
-   * @returns 
-   */
-  public getDBML(): string {
-    console.log(this.getDot());
-    const tables = Object.keys(this.tables).map((name) => {
-      const table = this.getTable(name);
-      return this.getDBMLTable(table);
-    }).join("\n\n");
-    const foreignKeys = this.getForeignKeys().map((foreignKey) => this.getDBMLForeignKey(foreignKey)).join("\n\n");
-
-    return `${tables}\n\n${foreignKeys}`.replace(/å/g, "a").replace(/ä/g, "a").replace(/ö/g, "o");
-
   }
 
   private getDotColumn(column: Column, id: string, isPrimaryKey: boolean): string {
@@ -478,7 +355,7 @@ export class SQLiteLayout {
       parts.push(this.getDotColumn(mapping.column, mapping.id, table.indexes.find((index) => index.primaryKey && index.columns.includes(mapping.column)) !== undefined));
     }
     for (const extraMapping of extraMappings) {
-      parts.push(`<TR><TD PORT="${extraMapping.id}" BGCOLOR="#e7e2dd"><FONT COLOR="#1d71b8">    <I>${extraMapping.columns.map((col) => col.name).join(", ")}</I>    </FONT></TD></TR>`);
+      parts.push(`<TR><TD PORT="${extraMapping.id}" BGCOLOR="#e7e2dd" ALIGN="CENTER"><FONT COLOR="#1d71b8">    <I>${extraMapping.columns.map((col) => col.name).join(", ")}</I>    </FONT></TD></TR>`);
     }
     parts.push("</TABLE>>];");
 
@@ -503,7 +380,7 @@ export class SQLiteLayout {
       toColumnId = toMapping.id;
     }
 
-    const [tailLabel, headLabel] = foreignKeyTypeToTuple(this.getForeignKeyTypeEnum(foreignKey));
+    const [tailLabel, headLabel] = foreignKeyTypeToTuple(this.getForeignKeyType(foreignKey));
     
     return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="${tailLabel}"]`;
   }
@@ -515,7 +392,7 @@ export class SQLiteLayout {
     parts.push("digraph SQLiteLayout {");
     // rankdir=TB,BT,LR,RL
     // settings copied from https://github.com/softwaretechnik-berlin/dbml-renderer
-    parts.push('charset="utf-8"; rankdir=LR; graph [fontname="helvetica", fontsize=32, fontcolor="#29235c", bgcolor="transparent"]; node [penwidth=0, margin=0, fontname="helvetica", fontsize=32, fontcolor="#29235c"]; edge [fontname="helvetica", fontsize=32, fontcolor="#29235c", color="#29235c"];');
+    parts.push('charset="utf-8"; rankdir=LR; graph [fontname="helvetica", fontsize=42, fontcolor="#29235c", bgcolor="transparent"]; node [penwidth=0, margin=0, fontname="helvetica", fontsize=42, fontcolor="#29235c", width=2, height=2]; edge [fontname="helvetica", fontsize=42, fontcolor="#29235c", color="#29235c"];');
     const tables = Object.keys(this.tables).map((name) => this.getTable(name)).map((table) => {
       return { name: table.name, value: this.getDotTable(table) };
     }).reduce((acc, val) => {
@@ -531,17 +408,6 @@ export class SQLiteLayout {
     return parts.join("\n");
   }
 }
-
-/**
- * @deprecated
- * @param dbml 
- * @returns 
- */
-export const dbmlToSVG = async (dbml: string) => {
-  const dot = run(dbml, "dot");
-  const graphviz = await Graphviz.load();
-  return graphviz.dot(dot);
-};
 
 export const dotToSvg = async (dot: string) => {
   const graphviz = await Graphviz.load();
