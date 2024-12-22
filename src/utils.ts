@@ -79,6 +79,25 @@ interface ForeignKey {
   onDelete: FN_ACTION;
 }
 
+interface DotTable {
+  dot: string;
+  id: string;
+  mappings: { column: Column, id: string }[];
+  extraMappings: { columns: Column[], columnNames: Set<string>, id: string }[];
+}
+
+enum ForeignKeyType {
+  ONE_TO_MANY = "1:*",
+  MANY_TO_ONE = "*:1",
+  ONE_TO_ONE = "1:1",
+  MANY_TO_MANY = "*:*",
+}
+
+const foreignKeyTypeToTuple = (type: ForeignKeyType): [string, string] => {
+  return type.split(":") as [string, string];
+};
+
+
 const typeResult = <T>(result: QueryExecResult): T[] => {
   if (result === undefined) {
     throw new Error("Result is undefined");
@@ -220,6 +239,7 @@ export const indent = (str: string, level: number) => {
 };
 
 export class SQLiteLayout {
+  private dotIdCounter = 0;
   private tables: { [name: string]: PartialTable } = {};
   private indexes: { [tableName: string]: Index[] } = {};
   private foreignKeys: PartialForeignKey[] = [];
@@ -284,6 +304,11 @@ export class SQLiteLayout {
     return "`Unsupported default value type`";
   }
 
+  /**
+   * @deprecated
+   * @param column 
+   * @returns 
+   */
   private getDBMLColumn(column: Column): string {
     const settings = [];
     if (!column.nullable) {
@@ -293,6 +318,11 @@ export class SQLiteLayout {
     return `${column.name} ${column.type} [${settings.join(", ")}]`;
   }
 
+  /**
+   * @deprecated
+   * @param index 
+   * @returns 
+   */
   private getDBMLIndex(index: Index): string {
     const settings = [];
     if (index.primaryKey) {
@@ -306,6 +336,11 @@ export class SQLiteLayout {
 
   }
 
+  /**
+   * @deprecated
+   * @param table 
+   * @returns 
+   */
   private getDBMLTable(table: Table): string {
     const columns = table.columns.map((column) => this.getDBMLColumn(column)).join("\n");
     const indexesFormatted = table.indexes.map((index) => this.getDBMLIndex(index)).join("\n");
@@ -355,6 +390,27 @@ export class SQLiteLayout {
     return "<>";
   }
 
+  private getForeignKeyTypeEnum(foreignKey: ForeignKey): ForeignKeyType {
+    const isToUnique = this.isColumnsOnUniqueIndex(foreignKey.to, foreignKey.toColumns);
+    const isFromUnique = this.isColumnsOnUniqueIndex(foreignKey.from, foreignKey.fromColumns);
+
+    if (isToUnique && isFromUnique) {
+      return ForeignKeyType.ONE_TO_ONE;
+    }
+    if (isToUnique) {
+      return ForeignKeyType.MANY_TO_ONE;
+    }
+    if (isFromUnique) {
+      return ForeignKeyType.ONE_TO_MANY;
+    }
+    return ForeignKeyType.MANY_TO_MANY;
+  } 
+
+  /**
+   * @deprecated
+   * @param foreignKey 
+   * @returns 
+   */
   private getDBMLForeignKey(foreignKey: ForeignKey): string {
     const type = this.getForeignKeyType(foreignKey);
     const fromColumns = foreignKey.fromColumns.map((col) => col.name).join(", ");
@@ -364,7 +420,12 @@ export class SQLiteLayout {
     return `Ref: ${foreignKey.from.name}.(${fromColumns}) ${type} ${foreignKey.to.name}.(${toColumns}) ${actions}`;
   }
 
+  /**
+   * @deprecated
+   * @returns 
+   */
   public getDBML(): string {
+    console.log(this.getDot());
     const tables = Object.keys(this.tables).map((name) => {
       const table = this.getTable(name);
       return this.getDBMLTable(table);
@@ -374,11 +435,115 @@ export class SQLiteLayout {
     return `${tables}\n\n${foreignKeys}`.replace(/å/g, "a").replace(/ä/g, "a").replace(/ö/g, "o");
 
   }
+
+  private getDotColumn(column: Column, id: string, isPrimaryKey: boolean): string {
+    const parts: string[] = [`<TR><TD ALIGN="LEFT" PORT="${id}" BGCOLOR="#e7e2dd"><TABLE CELLPADDING="0" CELLSPACING="0" BORDER="0">`];
+    parts.push('<TR><TD ALIGN="LEFT">' + (isPrimaryKey ? "<B>" : "") + `${column.name}    ` + (isPrimaryKey ? "</B>" : "") + "</TD>");
+    parts.push(`<TD ALIGN="RIGHT"><FONT>${column.type}${column.nullable ? " <B>?</B>" : ""}</FONT></TD>`);
+    parts.push("</TR></TABLE></TD></TR>");
+    return parts.join("\n");
+  }
+
+  private getDotTable(table: Table): DotTable {
+    const mappings = table.columns.map((column) => {
+      return { column, id: `f${this.dotIdCounter++}` };
+    } );
+    const extraMappings: { columns: Column[], columnNames: Set<string>, id: string }[] = [];
+    for (const foreignKey of this.getForeignKeys()) {
+      const relevantTable = foreignKey.from.name === table.name ? foreignKey.from : foreignKey.to;
+      if (relevantTable.name !== table.name) {
+        continue;
+      }
+
+      const relevantColumns = foreignKey.from.name === table.name ? foreignKey.fromColumns : foreignKey.toColumns;
+      const relevantColumnNames = new Set(relevantColumns.map((col) => col.name));
+
+      if (relevantColumns.length === 1) {
+        continue;
+      }
+
+      if (extraMappings.find((mapping) => mapping.columnNames.isSubsetOf(relevantColumnNames) && mapping.columnNames.size === relevantColumnNames.size)) {
+        continue;
+      }
+
+      extraMappings.push({ columns: relevantColumns, columnNames: relevantColumnNames, id: `f${this.dotIdCounter++}` });
+    }
+
+    const tableId = `${this.dotIdCounter++}`;
+
+    const parts: string[] = [];
+    parts.push(`"${table.name}" [id="${tableId}";label=<<TABLE BORDER="2" COLOR="#29235c" CELLBORDER="1" CELLSPACING="0" CELLPADDING="10">`);
+    parts.push(`<TR><TD PORT="f0" BGCOLOR="#1d71b8"><FONT COLOR="#ffffff"><B>${table.name}</B></FONT></TD></TR>`);
+    for (const mapping of mappings) {
+      parts.push(this.getDotColumn(mapping.column, mapping.id, table.indexes.find((index) => index.primaryKey && index.columns.includes(mapping.column)) !== undefined));
+    }
+    for (const extraMapping of extraMappings) {
+      parts.push(`<TR><TD PORT="${extraMapping.id}" BGCOLOR="#e7e2dd"><FONT COLOR="#1d71b8">    <I>${extraMapping.columns.map((col) => col.name).join(", ")}</I>    </FONT></TD></TR>`);
+    }
+    parts.push("</TABLE>>];");
+
+    return { dot: parts.join("\n"), id: tableId, mappings, extraMappings };
+  }
+
+  private getDotForeignKey(foreignKey: ForeignKey, tables: { [name: string]: DotTable }): string {
+    const fromTable = tables[foreignKey.from.name];
+    const toTable = tables[foreignKey.to.name];
+    
+    let [fromColumnId, toColumnId] = ["", ""];
+
+    if (foreignKey.fromColumns.length === 1) {
+      fromColumnId = fromTable.mappings.find((mapping) => mapping.column === foreignKey.fromColumns[0])!.id;
+      toColumnId = toTable.mappings.find((mapping) => mapping.column === foreignKey.toColumns[0])!.id;
+    } else {
+      const fromColumns = new Set(foreignKey.fromColumns.map((col) => col.name));
+      const toColumns = new Set(foreignKey.toColumns.map((col) => col.name));
+      const fromMapping = fromTable.extraMappings.find((mapping) => mapping.columnNames.isSubsetOf(fromColumns) && mapping.columnNames.size === fromColumns.size)!;
+      const toMapping = toTable.extraMappings.find((mapping) => mapping.columnNames.isSubsetOf(toColumns) && mapping.columnNames.size === toColumns.size)!;
+      fromColumnId = fromMapping.id;
+      toColumnId = toMapping.id;
+    }
+
+    const [tailLabel, headLabel] = foreignKeyTypeToTuple(this.getForeignKeyTypeEnum(foreignKey));
+    
+    return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="${tailLabel}"]`;
+  }
+
+
+  public getDot(): string {
+    this.dotIdCounter = 0;
+    const parts: string[] = [];
+    parts.push("digraph SQLiteLayout {");
+    // rankdir=TB,BT,LR,RL
+    // settings copied from https://github.com/softwaretechnik-berlin/dbml-renderer
+    parts.push('charset="utf-8"; rankdir=LR; graph [fontname="helvetica", fontsize=32, fontcolor="#29235c", bgcolor="transparent"]; node [penwidth=0, margin=0, fontname="helvetica", fontsize=32, fontcolor="#29235c"]; edge [fontname="helvetica", fontsize=32, fontcolor="#29235c", color="#29235c"];');
+    const tables = Object.keys(this.tables).map((name) => this.getTable(name)).map((table) => {
+      return { name: table.name, value: this.getDotTable(table) };
+    }).reduce((acc, val) => {
+      return { ...acc, [val.name]: val.value };
+    }, {} as { [name: string]: DotTable });
+    parts.push(...Object.values(tables).map((table) => table.dot));
+
+    const foreignKeys = this.getForeignKeys().map((foreignKey) => this.getDotForeignKey(foreignKey, tables)).filter((fk) => fk.length > 0);
+    parts.push(...foreignKeys);
+    parts.push("}");
+
+
+    return parts.join("\n");
+  }
 }
 
-
+/**
+ * @deprecated
+ * @param dbml 
+ * @returns 
+ */
 export const dbmlToSVG = async (dbml: string) => {
   const dot = run(dbml, "dot");
+  const graphviz = await Graphviz.load();
+  return graphviz.dot(dot);
+};
+
+export const dotToSvg = async (dot: string) => {
   const graphviz = await Graphviz.load();
   return graphviz.dot(dot);
 };

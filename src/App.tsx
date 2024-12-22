@@ -24,7 +24,7 @@ import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
 import SqliteInput from "./SqliteInput";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
-import { colorErdSVG, dbmlToSVG, downloadSvgAsPng, executorToLayout } from "./utils";
+import { colorErdSVG, dbmlToSVG, dotToSvg, downloadSvgAsPng, executorToLayout } from "./utils";
 
 import { format as formatFns } from "date-fns";
 
@@ -68,8 +68,10 @@ function App() {
       }
       return res[0];
     });
-    
-    dbmlToSVG(layout.getDBML()).then((svg) => {
+
+    const dot = layout.getDot();
+    console.log(dot);
+    dotToSvg(dot).then((svg) => {
       setErdSVG(svg);
     }).catch((error) => {
       setError("Error generating ERD: " + error);
