@@ -71,6 +71,7 @@ function App() {
     });
 
     const dot = layout.getDot();
+    console.log(dot);
     dotToSvg(dot).then((svg) => {
       setErdSVG(svg);
     }).catch((error) => {
@@ -117,6 +118,7 @@ function App() {
     }
 
     const finalSVG = colorErdSVG(erdSVG, isDarkMode());
+    console.log(finalSVG);
 
     setErdImage(`data:image/svg+xml;base64,${Buffer.from(finalSVG, "utf-8").toString("base64")}`);
   }, [erdSVG, isDarkMode]);

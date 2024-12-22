@@ -79,10 +79,10 @@ interface DotTable {
 }
 
 enum ForeignKeyType {
-  ONE_TO_MANY = "1:*",
-  MANY_TO_ONE = "*:1",
+  ONE_TO_MANY = "1:∞",
+  MANY_TO_ONE = "∞:1",
   ONE_TO_ONE = "1:1",
-  MANY_TO_MANY = "*:*",
+  MANY_TO_MANY = "∞:∞",
 }
 
 const foreignKeyTypeToTuple = (type: ForeignKeyType): [string, string] => {
@@ -231,7 +231,8 @@ export const indent = (str: string, level: number) => {
 };
 
 export class SQLiteLayout {
-  private dotIdCounter = 0;
+  // We don't start at 0 as it causes graphviz to point some edges to the wrong place
+  private dotIdCounter = 1;
   private tables: { [name: string]: PartialTable } = {};
   private indexes: { [tableName: string]: Index[] } = {};
   private foreignKeys: PartialForeignKey[] = [];
@@ -313,10 +314,11 @@ export class SQLiteLayout {
     return ForeignKeyType.MANY_TO_MANY;
   }
 
-  private getDotColumn(column: Column, id: string, isPrimaryKey: boolean): string {
+  private getDotColumn(column: Column, id: string, isPrimaryKey: boolean, padTo: number = 0): string {
+    const padding = " ".repeat(padTo - column.name.length + 2);
     const parts: string[] = [`<TR><TD ALIGN="LEFT" PORT="${id}" BGCOLOR="#e7e2dd"><TABLE CELLPADDING="0" CELLSPACING="0" BORDER="0">`];
-    parts.push('<TR><TD ALIGN="LEFT">' + (isPrimaryKey ? "<B>" : "") + `${column.name}    ` + (isPrimaryKey ? "</B>" : "") + "</TD>");
-    parts.push(`<TD ALIGN="RIGHT"><FONT>${column.type}${column.nullable ? " <B>?</B>" : ""}</FONT></TD>`);
+    parts.push('<TR><TD ALIGN="LEFT">' + (isPrimaryKey ? "<B>" : "") + `${column.name}<FONT COLOR="transparent">${padding}</FONT>` + (isPrimaryKey ? "</B>" : "") + "</TD>");
+    parts.push(`<TD ALIGN="RIGHT"><FONT><I>${column.type}${column.nullable ? " NULL" : ""}</I></FONT></TD>`);
     parts.push("</TR></TABLE></TD></TR>");
     return parts.join("\n");
   }
@@ -351,11 +353,12 @@ export class SQLiteLayout {
     const parts: string[] = [];
     parts.push(`"${table.name}" [id="${tableId}";label=<<TABLE BORDER="2" COLOR="#29235c" CELLBORDER="1" CELLSPACING="0" CELLPADDING="10">`);
     parts.push(`<TR><TD PORT="f0" BGCOLOR="#1d71b8"><FONT COLOR="#ffffff"><B>${table.name}</B></FONT></TD></TR>`);
+    const longestColumnLength = Math.max(...table.columns.map((col) => col.name.length));
     for (const mapping of mappings) {
-      parts.push(this.getDotColumn(mapping.column, mapping.id, table.indexes.find((index) => index.primaryKey && index.columns.includes(mapping.column)) !== undefined));
+      parts.push(this.getDotColumn(mapping.column, mapping.id, table.indexes.find((index) => index.primaryKey && index.columns.includes(mapping.column)) !== undefined, longestColumnLength));
     }
     for (const extraMapping of extraMappings) {
-      parts.push(`<TR><TD PORT="${extraMapping.id}" BGCOLOR="#e7e2dd" ALIGN="CENTER"><FONT COLOR="#1d71b8">    <I>${extraMapping.columns.map((col) => col.name).join(", ")}</I>    </FONT></TD></TR>`);
+      parts.push(`<TR><TD PORT="${extraMapping.id}" BGCOLOR="#e7e2dd" ALIGN="CENTER"><FONT COLOR="#1d71b8"><I>    ${extraMapping.columns.map((col) => col.name).join(", ")}    </I></FONT></TD></TR>`);
     }
     parts.push("</TABLE>>];");
 
@@ -382,12 +385,13 @@ export class SQLiteLayout {
 
     const [tailLabel, headLabel] = foreignKeyTypeToTuple(this.getForeignKeyType(foreignKey));
     
-    return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="${tailLabel}"]`;
+    // label=<<I>{${foreignKey.onUpdate}, ${foreignKey.onDelete}}</I>>
+    return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="${tailLabel}" labeldistance=3.5, labelfontsize=52, arrowhead=open, arrowsize=2];`;
   }
 
 
   public getDot(): string {
-    this.dotIdCounter = 0;
+    this.dotIdCounter = 1;
     const parts: string[] = [];
     parts.push("digraph SQLiteLayout {");
     // rankdir=TB,BT,LR,RL
@@ -438,7 +442,7 @@ const LIGHT_THEME: Theme = {
   tableHeader: "#3b82f6",
   tableBackground: "#cbd5e1",
   tableDetails: "#cbd5e1",
-  pkText: "#1A150F",
+  pkText: "#003373",
   lines: "#334155",
 };
 
