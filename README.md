@@ -3,7 +3,8 @@ SQLite ERD is a web application that generates an Entity-Relationship Diagram (E
 
 ## Features
 - Fully Client-Side Execution: All SQL exploration is performed in the browser using sql.js
-- DBML Based: Implements a DBML builder for SQLite databases in combination with [softwaretechnik-berlin/dbml-renderer](https://github.com/softwaretechnik-berlin/dbml-renderer) for diagram generation
+- Dot Based: Generates a DOT notation from the SQLite database schema before rendering it with Graphviz
+- UTF-8 Support: Supports UTF-8 characters in table and column names
 - Dark/Light Mode: Toggle between dark and light mode.
 - Export: Download the generated ERD as a PNG image.
 
