@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 import React, { useCallback, useEffect, useState } from "react";
+import { Buffer } from "buffer";
 import "./App.css";
 
 import initSqlJs from "sql.js";
@@ -24,7 +25,7 @@ import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
 import SqliteInput from "./SqliteInput";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
-import { colorErdSVG, dbmlToSVG, downloadSvgAsPng, executorToLayout } from "./utils";
+import { colorErdSVG, dotToSvg, downloadSvgAsPng, executorToLayout } from "./utils";
 
 import { format as formatFns } from "date-fns";
 
@@ -68,8 +69,9 @@ function App() {
       }
       return res[0];
     });
-    
-    dbmlToSVG(layout.getDBML()).then((svg) => {
+
+    const dot = layout.getDot();
+    dotToSvg(dot).then((svg) => {
       setErdSVG(svg);
     }).catch((error) => {
       setError("Error generating ERD: " + error);
@@ -116,7 +118,7 @@ function App() {
 
     const finalSVG = colorErdSVG(erdSVG, isDarkMode());
 
-    setErdImage(`data:image/svg+xml;base64,${btoa(finalSVG)}`);
+    setErdImage(`data:image/svg+xml;base64,${Buffer.from(finalSVG, "utf-8").toString("base64")}`);
   }, [erdSVG, isDarkMode]);
 
   const exportPng = useCallback(() => {
