@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { QueryExecResult, SqlValue } from "sql.js";
 
 // This sucessfully imports but we can't use @ts-expect-error as the error is not in at lint but while compiling(?)
@@ -556,5 +557,5 @@ export const downloadSvgAsPng = (svgString: string, filename: string): void => {
     alert(`Failed to load SVG: ${err}`);
   };
 
-  img.src = `data:image/svg+xml;base64,${btoa(svgString)}`;
+  img.src = `data:image/svg+xml;base64,${Buffer.from(svgString, "utf-8").toString("base64")}`;
 };
