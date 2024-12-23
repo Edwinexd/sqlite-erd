@@ -1,11 +1,10 @@
 import { QueryExecResult, SqlValue } from "sql.js";
 
-import "core-js/full/set/is-subset-of";
-
 // This sucessfully imports but we can't use @ts-expect-error as the error is not in at lint but while compiling(?)
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import { Graphviz } from "@hpcc-js/wasm-graphviz";
+import { MultiSet } from "mnemonist";
 
 interface Column {
   name: string;
@@ -75,7 +74,7 @@ interface DotTable {
   dot: string;
   id: string;
   mappings: { column: Column, id: string }[];
-  extraMappings: { columns: Column[], columnNames: Set<string>, id: string }[];
+  extraMappings: { columns: Column[], columnNames: MultiSet<string>, id: string }[];
 }
 
 enum ForeignKeyType {
@@ -255,10 +254,10 @@ export class SQLiteLayout {
     this.foreignKeys.push(foreignKey);
   }
 
-  public getTable(name: string): Table {
+  public getTable(name: string): Table | undefined {
     const table = this.tables[name];
     if (!table) {
-      throw new Error(`Table ${name} not found`);
+      return undefined;
     }
     return {
       name: table.name,
@@ -268,13 +267,16 @@ export class SQLiteLayout {
   }
 
   public getForeignKeys(): ForeignKey[] {
-    return this.foreignKeys.map((fk) => {
-      const toTable = this.getTable(fk.to);
+    return this.foreignKeys.filter((fk) => {
+      return this.tables[fk.from.name] !== undefined && this.tables[fk.to] !== undefined;
+    }).map((fk) => {
+      const fromTable = this.getTable(fk.from.name)!;
+      const toTable = this.getTable(fk.to)!;
       return {
-        from: this.getTable(fk.from.name),
+        from: fromTable,
         fromColumns: fk.fromColumns,
-        to: this.getTable(fk.to),
-        toColumns: toTable.columns.filter((col) => fk.toColumns.includes(col.name)),
+        to: toTable,
+        toColumns: fk.toColumns.filter((col) => toTable.columns.map((col) => col.name).includes(col)).map((col) => toTable.columns.find((c) => c.name === col)!),
         onUpdate: fk.onUpdate,
         onDelete: fk.onDelete
       };
@@ -283,16 +285,15 @@ export class SQLiteLayout {
 
   private isColumnsOnUniqueIndex(table: Table, columns: Column[]): boolean {
     // takes into account that e.x. unique(a) then (a, b) is on a unique index 
-    const columnSet = new Set(columns.map((col) => col.name));
+    const columnSet = MultiSet.from(columns.map((col) => col.name));
     for (const index of table.indexes) {
       if (!index.unique) {
         continue;
       }
-      const indexSet = new Set(index.columns.map((col) => col.name));
-      if (indexSet.isSubsetOf(columnSet)) {
+      const indexSet = MultiSet.from(index.columns.map((col) => col.name));
+      if (MultiSet.isSubset(columnSet, indexSet)) {
         return true;
       }
-
     }
 
     return false;
@@ -327,7 +328,7 @@ export class SQLiteLayout {
     const mappings = table.columns.map((column) => {
       return { column, id: `f${this.dotIdCounter++}` };
     } );
-    const extraMappings: { columns: Column[], columnNames: Set<string>, id: string }[] = [];
+    const extraMappings: { columns: Column[], columnNames: MultiSet<string>, id: string }[] = [];
     for (const foreignKey of this.getForeignKeys()) {
       const relevantTable = foreignKey.from.name === table.name ? foreignKey.from : foreignKey.to;
       if (relevantTable.name !== table.name) {
@@ -335,13 +336,13 @@ export class SQLiteLayout {
       }
 
       const relevantColumns = foreignKey.from.name === table.name ? foreignKey.fromColumns : foreignKey.toColumns;
-      const relevantColumnNames = new Set(relevantColumns.map((col) => col.name));
+      const relevantColumnNames = MultiSet.from(relevantColumns.map((col) => col.name));
 
       if (relevantColumns.length === 1) {
         continue;
       }
 
-      if (extraMappings.find((mapping) => mapping.columnNames.isSubsetOf(relevantColumnNames) && mapping.columnNames.size === relevantColumnNames.size)) {
+      if (extraMappings.find((mapping) => MultiSet.isSubset(mapping.columnNames, relevantColumnNames) && mapping.columnNames.size === relevantColumnNames.size)) {
         continue;
       }
 
@@ -375,10 +376,10 @@ export class SQLiteLayout {
       fromColumnId = fromTable.mappings.find((mapping) => mapping.column === foreignKey.fromColumns[0])!.id;
       toColumnId = toTable.mappings.find((mapping) => mapping.column === foreignKey.toColumns[0])!.id;
     } else {
-      const fromColumns = new Set(foreignKey.fromColumns.map((col) => col.name));
-      const toColumns = new Set(foreignKey.toColumns.map((col) => col.name));
-      const fromMapping = fromTable.extraMappings.find((mapping) => mapping.columnNames.isSubsetOf(fromColumns) && mapping.columnNames.size === fromColumns.size)!;
-      const toMapping = toTable.extraMappings.find((mapping) => mapping.columnNames.isSubsetOf(toColumns) && mapping.columnNames.size === toColumns.size)!;
+      const fromColumns = MultiSet.from(foreignKey.fromColumns.map((col) => col.name));
+      const toColumns = MultiSet.from(foreignKey.toColumns.map((col) => col.name));
+      const fromMapping = fromTable.extraMappings.find((mapping) => MultiSet.isSubset(mapping.columnNames, fromColumns) && mapping.columnNames.size === fromColumns.size)!;
+      const toMapping = toTable.extraMappings.find((mapping) => MultiSet.isSubset(mapping.columnNames, toColumns) && mapping.columnNames.size === toColumns.size)!;
       fromColumnId = fromMapping.id;
       toColumnId = toMapping.id;
     }
@@ -389,7 +390,6 @@ export class SQLiteLayout {
     return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="${tailLabel}" labeldistance=3.5, labelfontsize=52, arrowhead=open, arrowsize=2];`;
   }
 
-
   public getDot(): string {
     this.dotIdCounter = 1;
     const parts: string[] = [];
@@ -397,7 +397,7 @@ export class SQLiteLayout {
     // rankdir=TB,BT,LR,RL
     // settings copied from https://github.com/softwaretechnik-berlin/dbml-renderer
     parts.push('charset="utf-8"; rankdir=LR; graph [fontname="helvetica", fontsize=42, fontcolor="#29235c", bgcolor="transparent"]; node [penwidth=0, margin=0, fontname="helvetica", fontsize=42, fontcolor="#29235c", width=2, height=2]; edge [fontname="helvetica", fontsize=42, fontcolor="#29235c", color="#29235c"];');
-    const tables = Object.keys(this.tables).map((name) => this.getTable(name)).map((table) => {
+    const tables = Object.keys(this.tables).map((name) => this.getTable(name)!).map((table) => {
       return { name: table.name, value: this.getDotTable(table) };
     }).reduce((acc, val) => {
       return { ...acc, [val.name]: val.value };
@@ -410,6 +410,14 @@ export class SQLiteLayout {
 
 
     return parts.join("\n");
+  }
+
+  public getDebug(): object {
+    return {
+      tables: this.tables,
+      indexes: this.indexes,
+      foreignKeys: this.foreignKeys
+    };
   }
 }
 

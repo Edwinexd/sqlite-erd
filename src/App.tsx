@@ -70,12 +70,20 @@ function App() {
       return res[0];
     });
 
-    const dot = layout.getDot();
-    dotToSvg(dot).then((svg) => {
-      setErdSVG(svg);
-    }).catch((error) => {
-      setError("Error generating ERD: " + error);
-    });
+    try {
+      const dot = layout.getDot();
+      dotToSvg(dot).then((svg) => {
+        setErdSVG(svg);
+      }).catch((error) => {
+        setError("Error generating ERD: " + error);
+      });
+    } catch (error) {
+      setError("Error generating ERD, see console for more details.");
+      // eslint-disable-next-line no-console
+      console.error(error);
+      // eslint-disable-next-line no-console
+      console.error(layout.getDebug());
+    }
   }, [database]);
 
 
