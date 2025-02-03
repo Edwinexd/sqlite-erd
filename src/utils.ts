@@ -161,8 +161,7 @@ export const foreignKeysFromResult = (table: PartialTable, result: QueryExecResu
 
 // PRAGMA index_list(table)
 // PRAGMA index_info(index)
-export const indexesFromResult = (table: PartialTable, indexListResult: QueryExecResult, indexInfoResult: { [indexName: string]: QueryExecResult }): Index[] => {
-  const typedIndexListResult = typeResult<{ seq: number, name: string, unique: number, origin: string, partial: number }>(indexListResult);
+export const indexesFromResult = (table: PartialTable, typedIndexListResult: {seq: number, name: string, unique: number, origin: string, partial: number }[], indexInfoResult: { [indexName: string]: QueryExecResult }): Index[] => {
   const typedInfoResults: { [indexName: string]: { seqno: number, cid: number, name: string }[] } = Object.entries(indexInfoResult).map(([indexName, result]) => {
     return {
       [indexName]: typeResult<{ seqno: number, cid: number, name: string }>(result)
@@ -210,14 +209,15 @@ export const executorToLayout = (executor: (query: string) => QueryExecResult): 
     }
 
     const indexes = executor(`PRAGMA index_list(${tableName})`);
-    const indexNames = typeResult<{ name: string }>(indexes).map((row) => row.name);
+    const typedIndexList = typeResult<{ seq: number, name: string, unique: number, origin: string, partial: number }>(indexes);
+    const indexNames = typedIndexList.map((row) => row.name);
     const indexInfo = indexNames.map((indexName) => {
       return executor(`PRAGMA index_info(${indexName || '""'})`);
     }).reduce((acc, val, index) => {
       return { ...acc, [indexNames[index]]: val };
     }, {});
 
-    const idxs = indexesFromResult(table, indexes, indexInfo);
+    const idxs = indexesFromResult(table, typedIndexList, indexInfo);
     for (const idx of idxs) {
       layout.addIndex(tableName, idx);
     }
@@ -329,7 +329,23 @@ export class SQLiteLayout {
     const mappings = table.columns.map((column) => {
       return { column, id: `f${this.dotIdCounter++}` };
     } );
-    const extraMappings: { columns: Column[], columnNames: MultiSet<string>, id: string }[] = [];
+    const extraMappings: { columns: Column[], columnNames: MultiSet<string>, id: string, index: boolean, unique: boolean}[] = [];
+
+    for (const index of table.indexes) {
+      const relevantColumns = index.columns;
+      const relevantColumnNames = MultiSet.from(relevantColumns.map((col) => col.name));
+
+      if (index.primaryKey) {
+        continue;
+      }
+
+      if (extraMappings.find((mapping) => MultiSet.isSubset(mapping.columnNames, relevantColumnNames) && mapping.columnNames.size === relevantColumnNames.size)) {
+        continue;
+      }
+
+      extraMappings.push({ columns: relevantColumns, columnNames: relevantColumnNames, id: `f${this.dotIdCounter++}`, index: true, unique: index.unique });
+    }
+
     for (const foreignKey of this.getForeignKeys()) {
       const relevantTable = foreignKey.from.name === table.name ? foreignKey.from : foreignKey.to;
       if (relevantTable.name !== table.name) {
@@ -347,7 +363,8 @@ export class SQLiteLayout {
         continue;
       }
 
-      extraMappings.push({ columns: relevantColumns, columnNames: relevantColumnNames, id: `f${this.dotIdCounter++}` });
+
+      extraMappings.push({ columns: relevantColumns, columnNames: relevantColumnNames, id: `f${this.dotIdCounter++}`, index: false, unique: false });
     }
 
     const tableId = table.name;
@@ -360,7 +377,15 @@ export class SQLiteLayout {
       parts.push(this.getDotColumn(mapping.column, mapping.id, table.indexes.find((index) => index.primaryKey && index.columns.includes(mapping.column)) !== undefined, longestColumnLength));
     }
     for (const extraMapping of extraMappings) {
-      parts.push(`<TR><TD PORT="${extraMapping.id}" BGCOLOR="#e7e2dd" ALIGN="CENTER"><FONT COLOR="#1d71b8"><I>    ${extraMapping.columns.map((col) => col.name).join(", ")}    </I></FONT></TD></TR>`);
+      const mappingFlags: string[] = [];
+      if (extraMapping.index) {
+        mappingFlags.push("INDEX");
+      }
+      if (extraMapping.unique) {
+        mappingFlags.push("UNIQUE");
+      }
+      const indexString = mappingFlags.length > 0 ? ` (${mappingFlags.join(", ")})` : "";
+      parts.push(`<TR><TD PORT="${extraMapping.id}" BGCOLOR="#e7e2dd" ALIGN="CENTER"><FONT COLOR="#1d71b8"><I>    ${extraMapping.columns.map((col) => col.name).join(", ")}${indexString}    </I></FONT></TD></TR>`);
     }
     parts.push("</TABLE>>];");
 
