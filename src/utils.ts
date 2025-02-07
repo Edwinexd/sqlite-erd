@@ -292,7 +292,7 @@ export class SQLiteLayout {
         continue;
       }
       const indexSet = MultiSet.from(index.columns.map((col) => col.name));
-      if (MultiSet.isSubset(columnSet, indexSet)) {
+      if (MultiSet.isSuperset(columnSet, indexSet)) {
         return true;
       }
     }
