@@ -52,7 +52,7 @@ const SqliteInput: React.FC<SqliteInputProps> = ({ onUpload, onError }) => {
     <div
       className={`relative flex flex-col justify-center items-center min-h-96 border-4 ${
         isDragging
-          ? "border-green-500 bg-green-100"
+          ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900"
           : "border-dashed border-blue-400 hover:border-blue-500"
       } rounded-lg cursor-pointer`}
       onDragOver={handleDragOver}

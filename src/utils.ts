@@ -190,7 +190,7 @@ export const indexesFromResult = (table: PartialTable, typedIndexListResult: {se
 export const executorToLayout = (executor: (query: string) => QueryExecResult): SQLiteLayout => {
   const layout = new SQLiteLayout();
 
-  const tables = executor("SELECT name FROM sqlite_master WHERE type='table'");
+  const tables = executor("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
   const tableNames = typeResult<{ name: string }>(tables).map((row) => row.name);
 
   for (const tableName of tableNames) {
