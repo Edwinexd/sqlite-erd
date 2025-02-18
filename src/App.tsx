@@ -99,9 +99,11 @@ function App() {
 
     try {
       const db = new engine.Database(data);
+      // Pragma referencial integrity
+      db.exec("PRAGMA foreign_keys = ON;");
       setDatabase(db);
     } catch (error) {
-      setError("Error reading database file. Please upload a valid SQLite database file.\n\nError: " + error);
+      setError("Error reading database file. Please upload a valid SQLite database file with correct referential integrity constraints\n\nError: " + error);
       return;
     }
   }, [engine]);
