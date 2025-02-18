@@ -438,6 +438,33 @@ export class SQLiteLayout {
     return parts.join("\n");
   }
 
+  /**
+   * Runs semantic checks on the layout, returning a list of errors
+   */
+  public runSemanticChecks(): string[] {
+    // Check for foreign keys that don't point to a unique index
+    const errors: string[] = [];
+
+    for (const foreignKey of this.getForeignKeys()) {
+      const toTable = foreignKey.to;
+
+      const fromColumns = MultiSet.from(foreignKey.fromColumns.map((col) => col.name));
+      const toColumns = MultiSet.from(foreignKey.toColumns.map((col) => col.name));
+
+      const toUnique = this.isColumnsOnUniqueIndex(toTable, foreignKey.toColumns);
+
+      if (!toUnique) {
+        errors.push(`Foreign key from ${foreignKey.from.name}(${foreignKey.fromColumns.map((col) => col.name).join(", ")}) to ${foreignKey.to.name}(${foreignKey.toColumns.map((col) => col.name).join(", ")}) is not referencing a unique index or primary key.`);
+      }
+
+      if (fromColumns.size !== toColumns.size) {
+        errors.push(`Foreign key from ${foreignKey.from.name} to ${foreignKey.to.name} has a different number of columns`);
+      }
+    }
+
+    return errors;
+  }
+
   public getDebug(): object {
     return {
       tables: this.tables,

@@ -72,6 +72,11 @@ function App() {
 
     try {
       const dot = layout.getDot();
+      const semanticErrors = layout.runSemanticChecks();
+      if (semanticErrors.length > 0) {
+        setError("Semantic errors generating ERD: " + semanticErrors.join("\n"));
+        return;
+      }
       dotToSvg(dot).then((svg) => {
         setErdSVG(svg);
       }).catch((error) => {
