@@ -9,7 +9,7 @@ import { MultiSet } from "mnemonist";
 
 interface Column {
   name: string;
-  type: number | string | Uint8Array;
+  type: string;
   nullable: boolean;
   default: SqlValue;
 }
@@ -161,7 +161,7 @@ export const foreignKeysFromResult = (table: PartialTable, result: QueryExecResu
 
 // PRAGMA index_list(table)
 // PRAGMA index_info(index)
-export const indexesFromResult = (table: PartialTable, typedIndexListResult: {seq: number, name: string, unique: number, origin: string, partial: number }[], indexInfoResult: { [indexName: string]: QueryExecResult }): Index[] => {
+export const indexesFromResult = (table: PartialTable, typedIndexListResult: { seq: number, name: string, unique: number, origin: string, partial: number }[], indexInfoResult: { [indexName: string]: QueryExecResult }): Index[] => {
   const typedInfoResults: { [indexName: string]: { seqno: number, cid: number, name: string }[] } = Object.entries(indexInfoResult).map(([indexName, result]) => {
     return {
       [indexName]: typeResult<{ seqno: number, cid: number, name: string }>(result)
@@ -328,8 +328,8 @@ export class SQLiteLayout {
   private getDotTable(table: Table): DotTable {
     const mappings = table.columns.map((column) => {
       return { column, id: `f${this.dotIdCounter++}` };
-    } );
-    const extraMappings: { columns: Column[], columnNames: MultiSet<string>, id: string, index: boolean, unique: boolean}[] = [];
+    });
+    const extraMappings: { columns: Column[], columnNames: MultiSet<string>, id: string, index: boolean, unique: boolean }[] = [];
 
     for (const index of table.indexes) {
       const relevantColumns = index.columns;
@@ -395,7 +395,7 @@ export class SQLiteLayout {
   private getDotForeignKey(foreignKey: ForeignKey, tables: { [name: string]: DotTable }): string {
     const fromTable = tables[foreignKey.from.name];
     const toTable = tables[foreignKey.to.name];
-    
+
     let [fromColumnId, toColumnId] = ["", ""];
 
     if (foreignKey.fromColumns.length === 1) {
@@ -411,7 +411,7 @@ export class SQLiteLayout {
     }
 
     const [tailLabel, headLabel] = foreignKeyTypeToTuple(this.getForeignKeyType(foreignKey));
-    
+
     // label=<<I>{${foreignKey.onUpdate}, ${foreignKey.onDelete}}</I>>
     return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="${tailLabel}" labeldistance=3.5, labelfontsize=52, arrowhead=open, arrowsize=2];`;
   }
@@ -441,10 +441,11 @@ export class SQLiteLayout {
   /**
    * Runs semantic checks on the layout, returning a list of errors
    */
-  public runSemanticChecks(): string[] {
+  public runSemanticChecks(executor: (query: string) => QueryExecResult): string[] {
     // Check for foreign keys that don't point to a unique index
     const errors: string[] = [];
 
+    // Foreign key checks
     for (const foreignKey of this.getForeignKeys()) {
       const toTable = foreignKey.to;
 
@@ -455,12 +456,49 @@ export class SQLiteLayout {
 
       if (!toUnique) {
         errors.push(`Foreign key from ${foreignKey.from.name}(${foreignKey.fromColumns.map((col) => col.name).join(", ")}) to ${foreignKey.to.name}(${foreignKey.toColumns.map((col) => col.name).join(", ")}) is not referencing a unique index or primary key.`);
+        continue;
       }
 
       if (fromColumns.size !== toColumns.size) {
         errors.push(`Foreign key from ${foreignKey.from.name} to ${foreignKey.to.name} has a different number of columns`);
+        continue;
+      }
+
+      if (foreignKey.fromColumns.some((col, i) => col.type !== foreignKey.toColumns[i].type)) {
+        errors.push(`Foreign key from ${foreignKey.from.name}(${foreignKey.fromColumns.map((col) => { return { name: col.name, type: col.type }; }).map((col) => `${col.name}(${col.type})`).join(", ")}) to ${foreignKey.to.name}(${foreignKey.toColumns.map((col) => { return { name: col.name, type: col.type }; }).map((col) => `${col.name}(${col.type})`).join(", ")}) has columns with different types`);
+        continue;
       }
     }
+
+    // Check that data types are ok
+    for (const table of Object.values(this.tables)) {
+      const data = executor(`SELECT * FROM ${table.name}`);
+      const typedData = typeResult<{ [key: string]: SqlValue }>(data);
+      for (const row of typedData) {
+        for (const column of table.columns) {
+          const value = row[column.name];
+          if (value === null) {
+            continue;
+          }
+
+          if (column.type.includes("INTEGER") && typeof value !== "number") {
+            errors.push(`Column ${column.name} in table ${table.name} is of type INTEGER but has a non-integer value`);
+          } else if (column.type.includes("REAL") && typeof value !== "number") {
+            errors.push(`Column ${column.name} in table ${table.name} is of type REAL but has a non-number value`);
+          } else if (column.type.includes("INTEGER") && typeof value === "number" && !Number.isInteger(value)  && value !== 0) {
+            errors.push(`Column ${column.name} in table ${table.name} is of type INTEGER but has a non-integer value`);
+          } else if (column.type.includes("REAL") && typeof value === "number" && Number.isInteger(value) && value !== 0) {
+            errors.push(`Column ${column.name} in table ${table.name} is of type REAL but has an integer value`);
+          } else if (column.type.includes("TEXT") && typeof value !== "string") {
+            errors.push(`Column ${column.name} in table ${table.name} is of type TEXT but has a non-string value`);
+          } else if (column.type.includes("BLOB") && !(value instanceof Uint8Array)) {
+            errors.push(`Column ${column.name} in table ${table.name} is of type BLOB but has a non-BLOB value`);
+          }
+        }
+      }
+    }
+
+    
 
     return errors;
   }
@@ -572,7 +610,7 @@ export const colorErdSVG = (svg: string, darkMode: boolean): string => {
   const svgContent = serializer.serializeToString(svgElement).replaceAll(" ", "&#160;");
   const xmlProlog = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>';
   const doctype = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">';
-  
+
   return `${xmlProlog}\n${doctype}\n${svgContent}`;
 };
 

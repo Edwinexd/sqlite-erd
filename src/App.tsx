@@ -71,12 +71,22 @@ function App() {
     });
 
     try {
-      const dot = layout.getDot();
-      const semanticErrors = layout.runSemanticChecks();
+      // TODO Make disableable
+      const semanticErrors = layout.runSemanticChecks((query: string) => { 
+        if (!database) {
+          return { columns: [], values: [] };
+        }
+        const res = database.exec(query);
+        if (res.length === 0) {
+          return { columns: [], values: [] };
+        }
+        return res[0];
+      });
       if (semanticErrors.length > 0) {
         setError("Semantic errors generating ERD: " + semanticErrors.join("\n"));
         return;
       }
+      const dot = layout.getDot();
       dotToSvg(dot).then((svg) => {
         setErdSVG(svg);
       }).catch((error) => {
