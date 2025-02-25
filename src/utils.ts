@@ -485,10 +485,8 @@ export class SQLiteLayout {
             errors.push(`Column ${column.name} in table ${table.name} is of type INTEGER but has a non-integer value`);
           } else if (column.type.includes("REAL") && typeof value !== "number") {
             errors.push(`Column ${column.name} in table ${table.name} is of type REAL but has a non-number value`);
-          } else if (column.type.includes("INTEGER") && typeof value === "number" && !Number.isInteger(value)  && value !== 0) {
+          } else if (column.type.includes("INTEGER") && typeof value === "number" && !Number.isInteger(value) && value !== 0) {
             errors.push(`Column ${column.name} in table ${table.name} is of type INTEGER but has a non-integer value`);
-          } else if (column.type.includes("REAL") && typeof value === "number" && Number.isInteger(value) && value !== 0) {
-            errors.push(`Column ${column.name} in table ${table.name} is of type REAL but has an integer value`);
           } else if (column.type.includes("TEXT") && typeof value !== "string") {
             errors.push(`Column ${column.name} in table ${table.name} is of type TEXT but has a non-string value`);
           } else if (column.type.includes("BLOB") && !(value instanceof Uint8Array)) {
