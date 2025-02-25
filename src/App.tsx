@@ -15,7 +15,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Buffer } from "buffer";
 import "./App.css";
 
@@ -25,7 +25,7 @@ import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
 import SqliteInput from "./SqliteInput";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
-import { colorErdSVG, dotToSvg, downloadSvgAsPng, executorToLayout } from "./utils";
+import { colorErdSVG, dotToSvg, downloadSvgAsPng, executorToLayout, isSemanticallyTruthy } from "./utils";
 
 import { format as formatFns } from "date-fns";
 
@@ -33,6 +33,7 @@ function App() {
   const [engine, setEngine] = useState<initSqlJs.SqlJsStatic>();
   const [database, setDatabase] = useState<initSqlJs.Database>();
   const [error, setError] = useState<string | null>(null);
+  const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
 
   const [erdSVG, setErdSVG] = useState<string>();
   const [erdImage, setErdImage] = useState<string>();
@@ -49,6 +50,17 @@ function App() {
     setEngine(sql);
   }, []);
 
+  const executor = useCallback((query: string) => {
+    if (!database) {
+      return { columns: [], values: [] };
+    }
+    const res = database.exec(query);
+    if (res.length === 0) {
+      return { columns: [], values: [] };
+    }
+    return res[0];
+  }, [database]);
+
   useEffect(() => {
     initSQLEngine();
   }, [initSQLEngine]);
@@ -59,33 +71,20 @@ function App() {
       return;
     }
 
-    const layout = executorToLayout((query: string) => { 
-      if (!database) {
-        return { columns: [], values: [] };
-      }
-      const res = database.exec(query);
-      if (res.length === 0) {
-        return { columns: [], values: [] };
-      }
-      return res[0];
-    });
+    const layout = executorToLayout(executor);
 
     try {
-      // TODO Make disableable
-      const semanticErrors = layout.runSemanticChecks((query: string) => { 
-        if (!database) {
-          return { columns: [], values: [] };
-        }
-        const res = database.exec(query);
-        if (res.length === 0) {
-          return { columns: [], values: [] };
-        }
-        return res[0];
-      });
-      if (semanticErrors.length > 0) {
-        setError("Semantic errors generating ERD: " + semanticErrors.join("\n"));
-        return;
+      if (isSemanticallyTruthy(searchParams.get("debug"))) {
+        // eslint-disable-next-line no-console
+        console.log(layout.getDebug());
       }
+      if (isSemanticallyTruthy(searchParams.get("semantics"), true)) {
+        const semanticErrors = layout.runSemanticChecks(executor);
+        if (semanticErrors.length > 0) {
+          setError("Semantic errors generating ERD: " + semanticErrors.join("\n"));
+          return;
+        }
+      };
       const dot = layout.getDot();
       dotToSvg(dot).then((svg) => {
         setErdSVG(svg);
@@ -99,7 +98,7 @@ function App() {
       // eslint-disable-next-line no-console
       console.error(layout.getDebug());
     }
-  }, [database]);
+  }, [database, executor, searchParams]);
 
 
   const loadDatabase = useCallback(async (data: Uint8Array) => {

@@ -649,3 +649,12 @@ export const downloadSvgAsPng = (svgString: string, filename: string): void => {
 
   img.src = `data:image/svg+xml;base64,${Buffer.from(svgString, "utf-8").toString("base64")}`;
 };
+
+export const isSemanticallyTruthy = (value: string | null, nullTrue: boolean = false): boolean => {
+  if (value === null) {
+    return nullTrue;
+  }
+
+  const transformed = value.toLowerCase().trim();
+  return ["true", "t", "yes", "y", "1"].includes(transformed);
+};
