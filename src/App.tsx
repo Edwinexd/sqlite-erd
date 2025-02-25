@@ -110,6 +110,17 @@ function App() {
       const db = new engine.Database(data);
       // Pragma referencial integrity
       db.exec("PRAGMA foreign_keys = ON;");
+      const foreignKeyCheckResult = db.exec("PRAGMA foreign_key_check;");
+      // If it returns anything there are violations
+      if (foreignKeyCheckResult.length !== 0) {
+        throw new Error("PRAGMA foreign_key_check; failed");
+      }
+
+      // returns one row with ok if the database is ok
+      const integrityCheckResult = db.exec("PRAGMA integrity_check;");
+      if (integrityCheckResult[0].values.length !== 1 || integrityCheckResult[0].values[0][0] !== "ok") {
+        throw new Error("PRAGMA integrity_check; failed");
+      }
       setDatabase(db);
     } catch (error) {
       setError("Error reading database file. Please upload a valid SQLite database file with correct referential integrity constraints\n\nError: " + error);
