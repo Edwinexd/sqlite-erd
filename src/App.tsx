@@ -161,7 +161,7 @@ function App() {
         <div className="my-2"></div>
         <ThemeToggle setTheme={setTheme} isDarkMode={isDarkMode}></ThemeToggle>
         <h1 className="text-6xl font-semibold my-3">SQLite ERD</h1>
-        <div className="max-w-4xl w-full min-h-96 my-3 relative">
+        <div className={`w-full min-h-96 my-3 relative ${!erdImage ? "max-w-4xl" : "max-w-[calc(100%-4rem)]"}`}>
           {erdImage ? (
             <img
               src={erdImage}
@@ -183,7 +183,7 @@ function App() {
           <button
             className="bg-green-500 hover:bg-green-700 disabled:bg-green-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-2 my-4 rounded w-60" 
             onClick={() => exportPng()}
-            type="submit" disabled={!erdImage}
+            type="submit" disabled={!erdImage || !isSemanticallyTruthy(searchParams.get("semantics"), true)}
           >
             Download ERD (PNG)
           </button>
