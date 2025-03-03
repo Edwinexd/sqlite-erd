@@ -412,6 +412,23 @@ export class SQLiteLayout {
 
     const [tailLabel, headLabel] = foreignKeyTypeToTuple(this.getForeignKeyType(foreignKey));
 
+    if (foreignKey.from.name === foreignKey.to.name) {
+      // Due to an issue with graphviz, we need to add a dummy invisible node to make the edge not clip through other tables
+      const dummyId = `dummy${this.dotIdCounter++}`;
+      const parts = [];
+      const dummyLargeId = `${dummyId}_large`;
+      const dummySmallId = `${dummyId}_small`;
+      parts.push(`subgraph cluster_${dummyId} {`);
+      parts.push("  style=invis;");
+      parts.push(`  "${dummyLargeId}" [id="${dummyLargeId}" label="" width=3 height=3 fixedsize=true style=invis];`);
+      parts.push(`  "${dummySmallId}" [id="${dummySmallId}" label="" width=0 height=0 fixedsize=true style=invis];`);
+      parts.push(`  "${dummyLargeId}" -> "${dummySmallId}" [style=invis, weight=3];`);
+      parts.push("}");
+      parts.push(`"${foreignKey.from.name}":${fromColumnId} -> "${dummySmallId}" [dir=forward, penwidth=4, color="#29235c", headlabel="", taillabel="${tailLabel}" labeldistance=3.5, labelfontsize=52, arrowhead=none];`);
+      parts.push(`"${dummySmallId}" -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="" labeldistance=3.5, labelfontsize=52, arrowhead=open, arrowsize=2];`);
+      return parts.join("\n");
+    }
+
     // label=<<I>{${foreignKey.onUpdate}, ${foreignKey.onDelete}}</I>>
     return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="${tailLabel}" labeldistance=3.5, labelfontsize=52, arrowhead=open, arrowsize=2];`;
   }
