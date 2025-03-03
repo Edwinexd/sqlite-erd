@@ -86,6 +86,10 @@ function App() {
         }
       };
       const dot = layout.getDot();
+      if (isSemanticallyTruthy(searchParams.get("debug"))) {
+        // eslint-disable-next-line no-console
+        console.log(dot);
+      }
       dotToSvg(dot).then((svg) => {
         setErdSVG(svg);
       }).catch((error) => {
