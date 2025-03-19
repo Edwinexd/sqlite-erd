@@ -78,18 +78,43 @@ function App() {
         // eslint-disable-next-line no-console
         console.log(layout.getDebug());
       }
+
       if (isSemanticallyTruthy(searchParams.get("semantics"), true)) {
         const semanticErrors = layout.runSemanticChecks(executor);
         if (semanticErrors.length > 0) {
           setError("Semantic errors generating ERD: " + semanticErrors.join("\n"));
           return;
         }
-      };
+      }
+
+      if (isSemanticallyTruthy(searchParams.get("includeViews"), false)) {
+        const views = executor("SELECT name FROM sqlite_master WHERE type='view';").values;
+        const viewNames = views.map((view) => view[0]);
+        const columns = [{name: "[COUNT]", type: `${views.length}`, nullable: false, default: null}];
+        for (const viewName of viewNames) {
+          columns.push({name: viewName as string, type: "VIEW", nullable: false, default: null});
+        }
+        layout.addTable({name: "sqlite_erd_views", columns: columns});
+      }
+
+      if (isSemanticallyTruthy(searchParams.get("includeDataCounts"), false)) {
+        const tables = executor("SELECT name FROM sqlite_master WHERE type='table';").values;
+        const tableNames = tables.map((table) => table[0]);
+        const columns = [];
+        for (const tableName of tableNames) {
+          const count = executor(`SELECT COUNT(*) FROM ${tableName};`).values[0][0];
+          columns.push({name: tableName as string, type: `${count}`, nullable: false, default: null});
+        }
+        layout.addTable({name: "sqlite_erd_counts", columns});
+      }
+
       const dot = layout.getDot({ displayActions: isSemanticallyTruthy(searchParams.get("actions"), false) });
+      
       if (isSemanticallyTruthy(searchParams.get("debug"))) {
         // eslint-disable-next-line no-console
         console.log(dot);
       }
+      
       dotToSvg(dot).then((svg) => {
         setErdSVG(svg);
       }).catch((error) => {
