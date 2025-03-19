@@ -176,7 +176,7 @@ function App() {
         <div className="my-2"></div>
         <ThemeToggle setTheme={setTheme} isDarkMode={isDarkMode}></ThemeToggle>
         <h1 className="text-6xl font-semibold my-3">SQLite ERD</h1>
-        <div className={`w-full min-h-96 my-3 relative ${!erdImage ? "max-w-4xl" : "max-w-[calc(100%-4rem)]"}`}>
+        <div className={"max-w-4xl w-full min-h-96 my-3 relative"}>
           {erdImage ? (
             <img
               src={erdImage}
