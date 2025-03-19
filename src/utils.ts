@@ -392,7 +392,7 @@ export class SQLiteLayout {
     return { dot: parts.join("\n"), id: tableId, mappings, extraMappings };
   }
 
-  private getDotForeignKey(foreignKey: ForeignKey, tables: { [name: string]: DotTable }): string {
+  private getDotForeignKey(foreignKey: ForeignKey, tables: { [name: string]: DotTable }, displayActions: boolean): string {
     const fromTable = tables[foreignKey.from.name];
     const toTable = tables[foreignKey.to.name];
 
@@ -412,11 +412,15 @@ export class SQLiteLayout {
 
     const [tailLabel, headLabel] = foreignKeyTypeToTuple(this.getForeignKeyType(foreignKey));
 
-    // label=<<I>{${foreignKey.onUpdate}, ${foreignKey.onDelete}}</I>>
-    return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", headlabel="${headLabel}", taillabel="${tailLabel}" labeldistance=3.5, labelfontsize=52, arrowhead=open, arrowsize=2];`;
+    const label = displayActions ? `label=<<I>${foreignKey.onUpdate}, ${foreignKey.onDelete}</I>>, fontsize=42, ` : "";
+    return `"${foreignKey.from.name}":${fromColumnId} -> "${foreignKey.to.name}":${toColumnId} [dir=forward, penwidth=4, color="#29235c", ${label}headlabel="${headLabel}", taillabel="${tailLabel}" labeldistance=3.5, labelfontsize=52, arrowhead=open, arrowsize=2];`;
   }
 
-  public getDot(): string {
+  public getDot(
+    options?: {
+      displayActions?: boolean;
+    }
+  ): string {
     this.dotIdCounter = 1;
     const parts: string[] = [];
     parts.push("digraph SQLiteLayout {");
@@ -430,7 +434,7 @@ export class SQLiteLayout {
     }, {} as { [name: string]: DotTable });
     parts.push(...Object.values(tables).map((table) => table.dot));
 
-    const foreignKeys = this.getForeignKeys().map((foreignKey) => this.getDotForeignKey(foreignKey, tables)).filter((fk) => fk.length > 0);
+    const foreignKeys = this.getForeignKeys().map((foreignKey) => this.getDotForeignKey(foreignKey, tables, options?.displayActions || false)).filter((fk) => fk.length > 0);
     parts.push(...foreignKeys);
     parts.push("}");
 

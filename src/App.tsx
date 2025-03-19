@@ -85,7 +85,7 @@ function App() {
           return;
         }
       };
-      const dot = layout.getDot();
+      const dot = layout.getDot({ displayActions: isSemanticallyTruthy(searchParams.get("actions"), false) });
       if (isSemanticallyTruthy(searchParams.get("debug"))) {
         // eslint-disable-next-line no-console
         console.log(dot);
