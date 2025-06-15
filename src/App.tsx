@@ -25,7 +25,7 @@ import PrivacyNoticeToggle from "./PrivacyNoticeToggle";
 import SqliteInput from "./SqliteInput";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
-import { colorErdSVG, dotToSvg, downloadSvgAsPng, executorToLayout, isSemanticallyTruthy } from "./utils";
+import { colorErdSVG, dotToSvg, downloadSvgAsPng, escapeSqliteIdentifier, executorToLayout, isSemanticallyTruthy } from "./utils";
 
 import { format as formatFns } from "date-fns";
 
@@ -102,7 +102,7 @@ function App() {
         const tableNames = tables.map((table) => table[0]);
         const columns = [];
         for (const tableName of tableNames) {
-          const count = executor(`SELECT COUNT(*) FROM ${tableName};`).values[0][0];
+          const count = executor(`SELECT COUNT(*) FROM ${escapeSqliteIdentifier(tableName as string)};`).values[0][0];
           columns.push({name: tableName as string, type: `${count}`, nullable: false, default: null});
         }
         layout.addTable({name: "sqlite_erd_counts", columns});

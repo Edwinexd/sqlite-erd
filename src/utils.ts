@@ -89,6 +89,9 @@ const foreignKeyTypeToTuple = (type: ForeignKeyType): [string, string] => {
   return type.split(":") as [string, string];
 };
 
+export const escapeSqliteIdentifier = (identifier: string): string => {
+  return `"${identifier.replace(/"/g, '""')}"`;
+};
 
 const typeResult = <T>(result: QueryExecResult): T[] => {
   if (result === undefined) {
@@ -194,7 +197,7 @@ export const executorToLayout = (executor: (query: string) => QueryExecResult): 
   const tableNames = typeResult<{ name: string }>(tables).map((row) => row.name);
 
   for (const tableName of tableNames) {
-    const tableInfo = executor(`PRAGMA table_info(${tableName})`);
+    const tableInfo = executor(`PRAGMA table_info(${escapeSqliteIdentifier(tableName)})`);
     const { table, primaryKey } = tableFromResult(tableName, tableInfo);
 
     layout.addTable(table);
@@ -202,17 +205,17 @@ export const executorToLayout = (executor: (query: string) => QueryExecResult): 
     if (primaryKey.columns.length > 0) {
       layout.addIndex(tableName, primaryKey);
     }
-    const foreignKeys = executor(`PRAGMA foreign_key_list(${tableName})`);
+    const foreignKeys = executor(`PRAGMA foreign_key_list(${escapeSqliteIdentifier(tableName)})`);
     const fks = foreignKeysFromResult(table, foreignKeys);
     for (const fk of fks) {
       layout.addForeignKey(fk);
     }
 
-    const indexes = executor(`PRAGMA index_list(${tableName})`);
+    const indexes = executor(`PRAGMA index_list(${escapeSqliteIdentifier(tableName)})`);
     const typedIndexList = typeResult<{ seq: number, name: string, unique: number, origin: string, partial: number }>(indexes);
     const indexNames = typedIndexList.map((row) => row.name);
     const indexInfo = indexNames.map((indexName) => {
-      return executor(`PRAGMA index_info(${indexName || '""'})`);
+      return executor(`PRAGMA index_info(${escapeSqliteIdentifier(indexName) || '""'})`);
     }).reduce((acc, val, index) => {
       return { ...acc, [indexNames[index]]: val };
     }, {});
@@ -476,7 +479,7 @@ export class SQLiteLayout {
 
     // Check that data types are ok
     for (const table of Object.values(this.tables)) {
-      const data = executor(`SELECT * FROM ${table.name}`);
+      const data = executor(`SELECT * FROM ${escapeSqliteIdentifier(table.name)}`);
       const typedData = typeResult<{ [key: string]: SqlValue }>(data);
       for (const row of typedData) {
         for (const column of table.columns) {
