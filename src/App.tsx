@@ -26,6 +26,7 @@ import SqliteInput from "./SqliteInput";
 import ThemeToggle from "./ThemeToggle";
 import useTheme from "./useTheme";
 import { colorErdSVG, dotToSvg, downloadSvgAsPng, escapeSqliteIdentifier, executorToLayout, isSemanticallyTruthy } from "./utils";
+import InteractiveERD from "./InteractiveERD";
 
 import { format as formatFns } from "date-fns";
 
@@ -37,6 +38,8 @@ function App() {
 
   const [erdSVG, setErdSVG] = useState<string>();
   const [erdImage, setErdImage] = useState<string>();
+  const [modifiedErdSVG, setModifiedErdSVG] = useState<string>();
+  const [resetTrigger, setResetTrigger] = useState<number>(0);
 
   const { setTheme, isDarkMode } = useTheme();
 
@@ -181,9 +184,18 @@ function App() {
     }
 
     const finalSVG = colorErdSVG(erdSVG, isDarkMode());
-
+    setModifiedErdSVG(finalSVG);
     setErdImage(`data:image/svg+xml;base64,${Buffer.from(finalSVG, "utf-8").toString("base64")}`);
   }, [erdSVG, isDarkMode]);
+
+  const handleModifiedSVG = useCallback((svg: string) => {
+    setModifiedErdSVG(svg);
+  }, []);
+
+  const resetPositions = useCallback(() => {
+    setResetTrigger(prev => prev + 1);
+    setModifiedErdSVG(undefined);
+  }, []);
 
   const exportPng = useCallback(() => {
     if (!erdSVG) {
@@ -192,8 +204,77 @@ function App() {
 
     const formattedTimestamp = formatFns(new Date(), "yyyyMMdd_HHmm");
     const fileName = `sqlite_erd_${formattedTimestamp}.png`;
-    downloadSvgAsPng(colorErdSVG(erdSVG, false), fileName);
-  }, [erdSVG]);
+    
+    // Use the modified SVG with edited positions, or fall back to original
+    let svgToExport = modifiedErdSVG || colorErdSVG(erdSVG, false);
+    
+    // Validate and clean the SVG
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgToExport, "image/svg+xml");
+      const parserError = doc.querySelector("parsererror");
+      
+      if (parserError) {
+        console.warn("Modified SVG has errors, using original");
+        svgToExport = colorErdSVG(erdSVG, false);
+      } else {
+        // Re-serialize to ensure clean output
+        const svgElement = doc.documentElement as unknown as SVGSVGElement;
+        const serializer = new XMLSerializer();
+        svgToExport = serializer.serializeToString(svgElement);
+      }
+    } catch (error) {
+      console.warn("Error validating SVG, using original:", error);
+      svgToExport = colorErdSVG(erdSVG, false);
+    }
+    
+    console.log("Exporting PNG with SVG length:", svgToExport.length);
+    downloadSvgAsPng(svgToExport, fileName);
+  }, [erdSVG, modifiedErdSVG]);
+
+  const exportSvg = useCallback(() => {
+    if (!erdSVG) {
+      return;
+    }
+
+    const formattedTimestamp = formatFns(new Date(), "yyyyMMdd_HHmm");
+    const fileName = `sqlite_erd_${formattedTimestamp}.svg`;
+    
+    // Use the modified SVG with edited positions, or fall back to original
+    let svgToExport = modifiedErdSVG || colorErdSVG(erdSVG, false);
+    
+    // Validate and clean the SVG
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgToExport, "image/svg+xml");
+      const parserError = doc.querySelector("parsererror");
+      
+      if (parserError) {
+        console.warn("Modified SVG has errors, using original");
+        svgToExport = colorErdSVG(erdSVG, false);
+      } else {
+        // Re-serialize to ensure clean output
+        const svgElement = doc.documentElement as unknown as SVGSVGElement;
+        const serializer = new XMLSerializer();
+        svgToExport = serializer.serializeToString(svgElement);
+      }
+    } catch (error) {
+      console.warn("Error validating SVG, using original:", error);
+      svgToExport = colorErdSVG(erdSVG, false);
+    }
+    
+    console.log("Exporting SVG with length:", svgToExport.length);
+    
+    const blob = new Blob([svgToExport], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [erdSVG, modifiedErdSVG]);
 
   return (
     <div className="App">
@@ -201,16 +282,20 @@ function App() {
         <div className="my-2"></div>
         <ThemeToggle setTheme={setTheme} isDarkMode={isDarkMode}></ThemeToggle>
         <h1 className="text-6xl font-semibold my-3">SQLite ERD</h1>
-        <div className={"max-w-4xl w-full min-h-96 my-3 relative"}>
-          {erdImage ? (
-            <img
-              src={erdImage}
-              alt="ERD Diagram"
-              style={{
-                width: "100%",
-                height: "auto",
-              }}
-            />
+        <div className={"max-w-full w-full min-h-96 my-3 relative"}>
+          {erdImage && erdSVG ? (
+            <div className="w-full">
+              <div className="bg-blue-100 dark:bg-blue-900 border-l-4 border-blue-500 text-blue-700 dark:text-blue-200 p-4 mb-4 rounded" role="alert">
+                <p className="font-bold">Interactive Mode</p>
+                <p>Click and drag any table to reposition it. Your changes will be included in the exported diagram.</p>
+              </div>
+              <InteractiveERD 
+                svgString={colorErdSVG(erdSVG, isDarkMode())} 
+                isDarkMode={isDarkMode()}
+                onModifiedSVG={handleModifiedSVG}
+                resetTrigger={resetTrigger}
+              />
+            </div>
           ) : (
             <SqliteInput onUpload={(file) => {handleFile(file);}} onError={(errorMessage) => setError(errorMessage)}></SqliteInput>
           )}
@@ -219,23 +304,41 @@ function App() {
 
         {error && <p className="font-mono text-red-500 max-w-4xl text-xl">{error}</p>}
 
-        <div className="flex justify-center gap-4">
+        <div className="flex justify-center gap-4 flex-wrap px-4">
           <button
-            className="bg-green-500 hover:bg-green-700 disabled:bg-green-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-2 my-4 rounded w-60" 
+            className="bg-green-500 hover:bg-green-700 disabled:bg-green-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 my-4 rounded w-60 transition-colors" 
             onClick={() => exportPng()}
-            type="submit" disabled={!erdImage || !isSemanticallyTruthy(searchParams.get("semantics"), true)}
+            type="button" disabled={!erdImage || !isSemanticallyTruthy(searchParams.get("semantics"), true)}
           >
-            Download ERD (PNG)
+            Export as PNG
           </button>
 
           <button
-            className="bg-red-500 hover:bg-red-700 disabled:bg-red-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-2 my-4 rounded w-60" 
+            className="bg-blue-500 hover:bg-blue-700 disabled:bg-blue-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 my-4 rounded w-60 transition-colors" 
+            onClick={() => exportSvg()}
+            type="button" disabled={!erdImage || !isSemanticallyTruthy(searchParams.get("semantics"), true)}
+          >
+            Export as SVG
+          </button>
+
+          <button
+            className="bg-yellow-500 hover:bg-yellow-700 disabled:bg-yellow-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 my-4 rounded w-60 transition-colors" 
+            onClick={() => resetPositions()}
+            type="button" disabled={!erdImage}
+          >
+            Reset Positions
+          </button>
+
+          <button
+            className="bg-red-500 hover:bg-red-700 disabled:bg-red-400 disabled:opacity-50 text-white text-xl font-semibold py-2 px-4 my-4 rounded w-60 transition-colors" 
             onClick={() => {
               setErdSVG(undefined);
               setErdImage(undefined);
+              setModifiedErdSVG(undefined);
               setDatabase(undefined);
+              setResetTrigger(0);
             }}
-            type="submit" disabled={!erdImage}
+            type="button" disabled={!erdImage}
           >
             Clear ERD
           </button>

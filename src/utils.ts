@@ -620,39 +620,102 @@ export const colorErdSVG = (svg: string, darkMode: boolean): string => {
 };
 
 export const downloadSvgAsPng = (svgString: string, filename: string): void => {
-  const svg = new DOMParser().parseFromString(svgString, "image/svg+xml").documentElement;
-  const width = svg.getAttribute("width") || "1920";
-  const height = svg.getAttribute("height") || "1080";
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgString, "image/svg+xml");
+    
+    // Check for parsing errors
+    const parserError = doc.querySelector("parsererror");
+    if (parserError) {
+      console.error("SVG parsing error:", parserError.textContent);
+      alert("Failed to parse SVG. Please try again or check the console for details.");
+      return;
+    }
 
-  const canvas = document.createElement("canvas");
-  canvas.width = parseFloat(width);
-  canvas.height = parseFloat(height);
+    const svg = doc.documentElement as unknown as SVGSVGElement;
+    
+    // Remove any transform styles that might interfere
+    svg.style.transform = "";
+    svg.style.transformOrigin = "";
+    
+    const width = svg.getAttribute("width") || "1920";
+    const height = svg.getAttribute("height") || "1080";
 
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    alert("Failed to create canvas context");
-    return;
+    // Parse width and height, removing 'pt' or other units
+    const widthNum = parseFloat(width.replace(/[^\d.]/g, ""));
+    const heightNum = parseFloat(height.replace(/[^\d.]/g, ""));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = widthNum;
+    canvas.height = heightNum;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      alert("Failed to create canvas context");
+      return;
+    }
+
+    // Fill with white background
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const img = new Image();
+
+    img.onload = () => {
+      try {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const pngDataUrl = canvas.toDataURL("image/png");
+
+        const link = document.createElement("a");
+        link.href = pngDataUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (error) {
+        console.error("Error during PNG conversion:", error);
+        alert("Failed to convert SVG to PNG. Please try exporting as SVG instead.");
+      }
+    };
+
+    img.onerror = (err) => {
+      console.error("Image load error:", err);
+      alert("Failed to load SVG for PNG conversion. Please try exporting as SVG instead.");
+    };
+
+    // Serialize the cleaned SVG
+    const serializer = new XMLSerializer();
+    const svgContent = serializer.serializeToString(svg);
+    const svgBlob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(svgBlob);
+    
+    img.onload = () => {
+      try {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+          }
+        }, "image/png");
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error("Error during PNG conversion:", error);
+        alert("Failed to convert SVG to PNG. Please try exporting as SVG instead.");
+        URL.revokeObjectURL(url);
+      }
+    };
+
+    img.src = url;
+  } catch (error) {
+    console.error("Error in downloadSvgAsPng:", error);
+    alert("Failed to export PNG. Please try again or export as SVG instead.");
   }
-
-  const img = new Image();
-
-  img.onload = () => {
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const pngDataUrl = canvas.toDataURL("image/png");
-
-    const link = document.createElement("a");
-    link.href = pngDataUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  img.onerror = (err) => {
-    alert(`Failed to load SVG: ${err}`);
-  };
-
-  img.src = `data:image/svg+xml;base64,${Buffer.from(svgString, "utf-8").toString("base64")}`;
 };
 
 export const isSemanticallyTruthy = (value: string | null, nullTrue: boolean = false): boolean => {

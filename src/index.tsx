@@ -1,7 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
-import App from "./App";
+// Use the optimized App for better performance
+import App from "./AppOptimized";
 import reportWebVitals from "./reportWebVitals";
 
 
